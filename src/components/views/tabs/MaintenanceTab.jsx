@@ -100,41 +100,47 @@ function TicketModal({ buildingId, units = [], userId, ticket, onClose, staffLis
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
-    let photoUrls = ticket?.receipt_urls ? [...ticket.receipt_urls] : [];
-    for (let i = 0; i < photos.length; i++) {
-      const file = photos[i];
-      const safeName = file.name ? file.name.replace(/[^a-zA-Z0-9.-]/g, "_") : "photo";
-      const url = await uploadFile(`maintenance/${buildingId}/${Date.now()}_${i}_${safeName}`, file);
-      if (url) photoUrls.push(url);
-    }
-    const isVacantUnit = unitId === "common_area" || selectedUnit?.status === "vacant" || (!selectedUnit?.tenant?.name && !selectedUnit?.tenant_name);
-    const finalBillingType = isVacantUnit ? "landlord_expense" : billingType;
+    try {
+      let photoUrls = ticket?.receipt_urls ? [...ticket.receipt_urls] : [];
+      for (let i = 0; i < photos.length; i++) {
+        const file = photos[i];
+        const safeName = file.name ? file.name.replace(/[^a-zA-Z0-9.-]/g, "_") : "photo";
+        const url = await uploadFile(`maintenance/${buildingId}/${Date.now()}_${i}_${safeName}`, file);
+        if (url) photoUrls.push(url);
+      }
+      const isVacantUnit = unitId === "common_area" || selectedUnit?.status === "vacant" || (!selectedUnit?.tenant?.name && !selectedUnit?.tenant_name);
+      const finalBillingType = isVacantUnit ? "landlord_expense" : billingType;
 
-    const data = {
-      building_id: buildingId,
-      user_id: userId,
-      unit_id: unitId,
-      unit_label: unitLabel,
-      title: title.trim(),
-      description: description.trim(),
-      priority,
-      workforce,
-      vendor_name: workforce === "vendor" ? vendorName.trim() : null,
-      assigned_staff_id: workforce === "staff" ? assignedStaffId : null,
-      material_cost: Number(materialCost) || 0,
-      labor_cost: Number(laborCost) || 0,
-      total_cost: total,
-      billing_type: finalBillingType,
-      receipt_urls: photoUrls,
-      status: ticket?.status || "reported",
-    };
-    if (editing) {
-      await updateMaintenanceTicketDoc(ticket.id, data);
-    } else {
-      await addMaintenanceTicketDoc(data);
+      const data = {
+        building_id: buildingId,
+        user_id: userId,
+        unit_id: unitId,
+        unit_label: unitLabel,
+        title: title.trim(),
+        description: description.trim(),
+        priority,
+        workforce,
+        vendor_name: workforce === "vendor" ? vendorName.trim() : null,
+        assigned_staff_id: workforce === "staff" ? assignedStaffId : null,
+        material_cost: Number(materialCost) || 0,
+        labor_cost: Number(laborCost) || 0,
+        total_cost: total,
+        billing_type: finalBillingType,
+        receipt_urls: photoUrls,
+        status: ticket?.status || "reported",
+      };
+      if (editing) {
+        await updateMaintenanceTicketDoc(ticket.id, data);
+      } else {
+        await addMaintenanceTicketDoc(data);
+      }
+      onClose();
+    } catch (err) {
+      console.error("Failed to save maintenance ticket:", err);
+      alert("Failed to save maintenance ticket: " + (err.message || "Unknown error"));
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
-    onClose();
   };
 
   return (
@@ -363,27 +369,51 @@ function TicketCard({ ticket, units = [], onEdit, onDelete, onStatusChange, staf
   const rawIdx = STATUSES.findIndex(s => s.key === ticket.status);
   const currentIdx = rawIdx !== -1 ? rawIdx : 0;
 
+  useEffect(() => {
+    if (!payFile) {
+      setPayFilePrev(null);
+      return;
+    }
+    const url = URL.createObjectURL(payFile);
+    setPayFilePrev(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [payFile]);
+
   const advanceStatus = async () => {
     if (currentIdx >= STATUSES.length - 1) return;
     setUpdatingStatus(true);
-    await updateMaintenanceTicketDoc(ticket.id, { status: STATUSES[currentIdx + 1].key });
-    setUpdatingStatus(false);
+    try {
+      await updateMaintenanceTicketDoc(ticket.id, { status: STATUSES[currentIdx + 1].key });
+    } catch (err) {
+      console.error("Failed to advance maintenance ticket status:", err);
+      alert("Failed to update status: " + (err.message || "Unknown error"));
+    } finally {
+      setUpdatingStatus(false);
+    }
   };
 
   const handlePaySubmit = async (e) => {
     e.preventDefault();
     setSubmittingPay(true);
-    let url = null;
-    if (payFile) {
-      url = await uploadFile(`maintenance_payments/${ticket.building_id || 'general'}/${ticket.id}_${Date.now()}`, payFile);
+    try {
+      let url = null;
+      if (payFile) {
+        url = await uploadFile(`maintenance_payments/${ticket.building_id || 'general'}/${ticket.id}_${Date.now()}`, payFile);
+      }
+      const updateData = { is_paid: true, status: "settled" };
+      if (url) {
+        updateData.payment_receipt_url = url;
+      }
+      await updateMaintenanceTicketDoc(ticket.id, updateData);
+      setShowPayForm(false);
+    } catch (err) {
+      console.error("Failed to settle ticket payment:", err);
+      alert("Failed to process payment settlement: " + (err.message || "Unknown error"));
+    } finally {
+      setSubmittingPay(false);
     }
-    const updateData = { is_paid: true, status: "settled" };
-    if (url) {
-      updateData.payment_receipt_url = url;
-    }
-    await updateMaintenanceTicketDoc(ticket.id, updateData);
-    setSubmittingPay(false);
-    setShowPayForm(false);
   };
 
   return (
@@ -510,9 +540,7 @@ function TicketCard({ ticket, units = [], onEdit, onDelete, onStatusChange, staf
           <div>
             <label className="block text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">Payment Evidence / Receipt (Optional)</label>
             <input type="file" accept="image/*" onChange={e => {
-              const f = e.target.files[0];
-              setPayFile(f);
-              setPayFilePrev(f ? URL.createObjectURL(f) : null);
+              setPayFile(e.target.files[0] || null);
             }} className="w-full text-[11px] text-zinc-600 file:mr-2 file:rounded-full file:border-0 file:bg-white file:px-3 file:py-1.5 file:text-[10px] file:font-semibold border border-zinc-200 rounded-xl p-1 bg-white cursor-pointer hover:border-zinc-300 transition" />
           </div>
           {payFilePrev && (
@@ -572,7 +600,12 @@ export default function MaintenanceTab({ building, units, userId }) {
 
   const handleDelete = async (t) => {
     if (!confirm(`Delete ticket "${t.title}"?`)) return;
-    await deleteMaintenanceTicketDoc(t.id);
+    try {
+      await deleteMaintenanceTicketDoc(t.id);
+    } catch (err) {
+      console.error("Failed to delete ticket:", err);
+      alert("Failed to delete ticket: " + (err.message || "Unknown error"));
+    }
   };
 
   const handleEdit = (t) => {
