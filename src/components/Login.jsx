@@ -67,7 +67,7 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-100 p-6 font-sans">
+    <div className="flex min-h-[100dvh] items-center justify-center bg-zinc-100 p-4 sm:p-6 font-sans">
       <div className="w-full max-w-sm animate-scale-in">
         {/* Brand */}
         <div className="mb-8 text-center flex flex-col items-center animate-fade-down delay-100">

@@ -685,6 +685,7 @@ export default function Visualizer3D({ building, units, selectedUnitId, onSelect
   const [showBuilderGuide, setShowBuilderGuide] = useState(false);
   const [showFirstEntryHint, setShowFirstEntryHint] = useState(false);
   const [navTipDismissed, setNavTipDismissed] = useState(false);
+  const [mobileTipDismissed, setMobileTipDismissed] = useState(false);
   const [saveToast, setSaveToast] = useState(false);
   const hasShownHint = useRef(false);
   const [editorRooms, setEditorRooms] = useState([]);
@@ -1095,14 +1096,24 @@ export default function Visualizer3D({ building, units, selectedUnitId, onSelect
           </div>
 
           {/* Mobile tip banner */}
-          <div className="md:hidden absolute top-3 inset-x-3 z-30 pointer-events-none flex justify-center">
-            <div className="pointer-events-auto bg-zinc-900 text-zinc-300 text-[11px] font-medium px-3.5 py-1.5 rounded-full border border-white/10 shadow-lg flex items-center gap-1.5">
-              <span>💡 3D view is best experienced on iPad or desktop</span>
+          {!mobileTipDismissed && (
+            <div className="md:hidden absolute top-16 inset-x-3 z-30 pointer-events-none flex justify-center animate-fade-down">
+              <div className="pointer-events-auto bg-zinc-900/90 backdrop-blur-sm text-zinc-300 text-[11px] font-medium px-3.5 py-1.5 rounded-full border border-white/10 shadow-lg flex items-center gap-2">
+                <span>💡 3D view is best experienced on iPad or desktop</span>
+                <button
+                  type="button"
+                  onClick={() => setMobileTipDismissed(true)}
+                  className="text-white/40 hover:text-white p-0.5 rounded cursor-pointer"
+                  aria-label="Dismiss tip"
+                >
+                  <X size={12} />
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* ── BOTTOM-LEFT HUD: Building Meta & Edit Controls ─────────────────────────── */}
-          <div className="absolute bottom-4 sm:bottom-6 left-3 sm:left-6 z-20 flex items-center gap-2.5 pointer-events-none flex-wrap max-w-[95vw] sm:max-w-[60vw]">
+          <div className="absolute bottom-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:bottom-6 left-3 sm:left-6 z-20 flex items-center gap-2 pointer-events-none flex-wrap max-w-[calc(100vw-1.5rem)] sm:max-w-[60vw]">
             <div className="pointer-events-auto flex items-center gap-2.5 bg-zinc-900 border border-white/10 rounded-2xl p-1.5 pl-3 shadow-2xl shrink-0">
               {onBack && !editMode && (
                 <button
@@ -1401,8 +1412,8 @@ export default function Visualizer3D({ building, units, selectedUnitId, onSelect
           </div>
 
           {/* ── BOTTOM CONTROL DOCK ──────────────────────────────────────────── */}
-          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-            <div className="pointer-events-auto flex items-center gap-3 bg-zinc-900 border border-white/10 shadow-2xl rounded-2xl px-3 py-2 text-white">
+          <div className="absolute bottom-20 sm:bottom-5 left-1/2 -translate-x-1/2 z-30 pointer-events-none w-full max-w-[calc(100vw-1.5rem)] flex justify-center">
+            <div className="pointer-events-auto flex items-center gap-2 sm:gap-3 bg-zinc-900 border border-white/10 shadow-2xl rounded-2xl px-2.5 sm:px-3 py-2 text-white max-w-full overflow-x-auto no-scrollbar">
 
               {/* Camera Presets — Segmented pill with icons (3D mode only) */}
               {viewMode === "3d" && (

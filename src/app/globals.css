@@ -24,14 +24,31 @@
 
 @layer base {
   * { box-sizing: border-box; }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
   html, body {
     margin: 0;
     font-family: var(--font-sans);
     background: #f4f4f5; /* zinc-100 — distinct from white cards for elevation clarity */
     color: #18181b; /* zinc-900 */
     -webkit-tap-highlight-color: transparent;
-    -webkit-touch-callout: none;
     touch-action: manipulation;
+    overscroll-behavior-y: none;
+  }
+
+  /* Prevent iOS Safari from auto-zooming into inputs when font is under 16px */
+  @media (pointer: coarse), (max-width: 639px) {
+    input, textarea, select {
+      font-size: 16px !important;
+    }
+  }
+
+  /* Prevent long-press text selection on interactive controls */
+  button, [role="button"], a {
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
   }
 }
 

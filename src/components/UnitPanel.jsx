@@ -363,8 +363,8 @@ export default function UnitPanel({ unit, onClose, isDrawerMode, onNavigateToMai
   const curStatus = STATUS_OPTIONS.find((s) => s.value === status) || STATUS_OPTIONS[0];
   const displayPhoto = photoPreview || tenantPhotoUrl;
 
-  const floatingClasses = "absolute top-4 sm:top-8 bottom-4 sm:bottom-8 right-2 sm:right-10 z-[999] w-[calc(100%-1rem)] sm:w-96 rounded-2xl border border-zinc-200/80 shadow-[0_2px_8px_0_rgba(0,0,0,0.12),_0_20px_48px_-8px_rgba(0,0,0,0.20)]";
-  const drawerClasses = "fixed top-0 right-0 h-full w-full sm:w-[420px] max-w-full shadow-[0_0_0_1px_rgba(0,0,0,0.06),_0_16px_48px_-4px_rgba(0,0,0,0.18)] z-[999] transition-transform border-l border-zinc-200/80";
+  const floatingClasses = "fixed sm:absolute inset-x-0 sm:inset-x-auto bottom-0 sm:bottom-8 sm:right-10 top-20 sm:top-8 z-[999] w-full sm:w-96 rounded-t-2xl sm:rounded-2xl border border-zinc-200/80 shadow-[0_2px_8px_0_rgba(0,0,0,0.12),_0_20px_48px_-8px_rgba(0,0,0,0.20)]";
+  const drawerClasses = "fixed top-0 right-0 h-[100dvh] w-full sm:w-[420px] max-w-full shadow-[0_0_0_1px_rgba(0,0,0,0.06),_0_16px_48px_-4px_rgba(0,0,0,0.18)] z-[999] transition-transform border-l border-zinc-200/80";
 
   return (
     <>
@@ -428,7 +428,7 @@ export default function UnitPanel({ unit, onClose, isDrawerMode, onNavigateToMai
       </div>
 
       {/* ── Body (scrollable) ───────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6 animate-fade-up delay-100">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 sm:py-5 space-y-5 sm:space-y-6 pb-[calc(2rem+env(safe-area-inset-bottom,0px))] animate-fade-up delay-100">
 
         {/* ── READ-ONLY VIEW ─────────────────────────────────────────────── */}
         {!isEditing && (
@@ -952,7 +952,7 @@ export default function UnitPanel({ unit, onClose, isDrawerMode, onNavigateToMai
 
       {/* ── Footer ─────────────────────────────────────────────────────────── */}
       {isEditing && (
-        <div className="border-t border-zinc-100 bg-zinc-50/50 px-6 py-4 shrink-0">
+        <div className="border-t border-zinc-100 bg-zinc-50/50 px-4 sm:px-6 py-3.5 sm:py-4 pb-[max(1rem,calc(1rem+env(safe-area-inset-bottom,0px)))] shrink-0">
           <button
             type="submit" form="unit-form" disabled={saving}
             className="w-full rounded-xl bg-[var(--color-blue-600)] py-2.5 text-[14px] font-semibold text-white transition hover:bg-[var(--color-blue-700)] disabled:opacity-50 shadow-sm"

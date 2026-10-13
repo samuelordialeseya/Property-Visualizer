@@ -256,18 +256,18 @@ export default function PropertyDetail({
                 <table className="w-full text-left text-[14px]">
                   <thead>
                     <tr className="border-b border-zinc-200/80 bg-zinc-50/80 text-[11px] font-bold uppercase tracking-[0.08em] text-zinc-500 font-['Manrope']">
-                      <th className="px-6 py-3">UNIT</th>
-                      <th className="px-6 py-3">STATUS</th>
-                      <th className="px-6 py-3">TENANT</th>
-                      <th className="px-6 py-3">RENT / MO</th>
-                      <th className="px-6 py-3">LEASE END</th>
-                      <th className="px-6 py-3 text-right">ACTIONS</th>
+                      <th className="px-3 sm:px-6 py-3">UNIT</th>
+                      <th className="px-3 sm:px-6 py-3">STATUS</th>
+                      <th className="px-3 sm:px-6 py-3">TENANT</th>
+                      <th className="px-3 sm:px-6 py-3">RENT / MO</th>
+                      <th className="hidden sm:table-cell px-6 py-3">LEASE END</th>
+                      <th className="px-3 sm:px-6 py-3 text-right">ACTIONS</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100 font-['Manrope']">
                     {filteredUnits.length === 0 ? (
                       <tr>
-                        <td colSpan="6" className="px-6 py-12 text-center text-zinc-400">
+                        <td colSpan="6" className="px-4 sm:px-6 py-12 text-center text-zinc-400">
                           <p className="font-bold text-[14px] text-zinc-700 font-['Sora']">No units found</p>
                           <p className="text-[12px] mt-1 font-['Manrope']">No units matched your filter or search query.</p>
                           {(unitSearchQuery || statusFilter !== "all" || floorFilter !== "all") && (
@@ -296,30 +296,30 @@ export default function PropertyDetail({
                             style={{ animationDelay: `${Math.min(idx * 25, 250)}ms` }}
                             className={`cursor-pointer transition hover:bg-zinc-50/80 animate-fade-up ${selectedUnit?.id === u.id ? "bg-zinc-100/70" : ""}`}
                           >
-                            <td className="px-6 py-3.5 font-bold text-zinc-900 font-['Sora']">
+                            <td className="px-3 sm:px-6 py-3 sm:py-3.5 font-bold text-zinc-900 font-['Sora']">
                               <span>{u.unit_label || "—"}</span>
                               {u.floor !== undefined && (
-                                <span className="ml-2 text-[11px] font-semibold text-zinc-400 font-['Manrope']">
+                                <span className="ml-1.5 sm:ml-2 text-[10px] sm:text-[11px] font-semibold text-zinc-400 font-['Manrope']">
                                   F{u.floor}
                                 </span>
                               )}
                             </td>
-                            <td className="px-6 py-3.5">
-                              <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${s.pill} font-['Manrope']`}>
+                            <td className="px-3 sm:px-6 py-3 sm:py-3.5">
+                              <span className={`inline-flex items-center gap-1.5 rounded-full px-2 sm:px-2.5 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider ${s.pill} font-['Manrope']`}>
                                 <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
                                 {s.label}
                               </span>
                             </td>
-                            <td className="px-6 py-3.5 text-zinc-700 font-medium">
+                            <td className="px-3 sm:px-6 py-3 sm:py-3.5 text-zinc-700 font-medium text-[12px] sm:text-[14px]">
                               {u.tenant?.name || <span className="text-zinc-400 italic">Vacant</span>}
                             </td>
-                            <td className="px-6 py-3.5 font-bold text-zinc-900 font-['Sora'] tabular-nums">
+                            <td className="px-3 sm:px-6 py-3 sm:py-3.5 font-bold text-zinc-900 font-['Sora'] tabular-nums text-[12px] sm:text-[14px]">
                               ₱{(u.monthly_rent || 0).toLocaleString()}
                             </td>
-                            <td className="px-6 py-3.5 text-zinc-600 text-[13px]">
+                            <td className="hidden sm:table-cell px-6 py-3.5 text-zinc-600 text-[13px]">
                               {u.tenant?.lease_end || <span className="text-zinc-400">—</span>}
                             </td>
-                            <td className="px-6 py-3.5 text-right">
+                            <td className="px-3 sm:px-6 py-3 sm:py-3.5 text-right">
                               <div className="flex justify-end gap-2">
                                 <button 
                                   type="button"

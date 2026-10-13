@@ -160,12 +160,12 @@ export default function PropertiesList({
             </div>
 
             {/* Filter Pills and Sort */}
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center bg-white p-1 rounded-xl border border-zinc-200/90 shadow-xs">
+            <div className="flex flex-wrap items-center gap-2 max-w-full">
+              <div className="flex items-center bg-white p-1 rounded-xl border border-zinc-200/90 shadow-xs max-w-full overflow-x-auto no-scrollbar">
                 <button
                   type="button"
                   onClick={() => setStatusFilter("all")}
-                  className={`px-3 py-1 rounded-lg text-[12px] font-bold transition font-['Manrope'] cursor-pointer ${
+                  className={`px-3 py-1 rounded-lg text-[12px] font-bold transition font-['Manrope'] cursor-pointer shrink-0 ${
                     statusFilter === "all"
                       ? "bg-[#0b3860] text-white shadow-xs"
                       : "text-zinc-600 hover:text-zinc-900"
@@ -176,7 +176,7 @@ export default function PropertiesList({
                 <button
                   type="button"
                   onClick={() => setStatusFilter("occupied")}
-                  className={`px-3 py-1 rounded-lg text-[12px] font-bold transition font-['Manrope'] cursor-pointer ${
+                  className={`px-3 py-1 rounded-lg text-[12px] font-bold transition font-['Manrope'] cursor-pointer shrink-0 ${
                     statusFilter === "occupied"
                       ? "bg-[#0b3860] text-white shadow-xs"
                       : "text-zinc-600 hover:text-zinc-900"
@@ -187,7 +187,7 @@ export default function PropertiesList({
                 <button
                   type="button"
                   onClick={() => setStatusFilter("vacant")}
-                  className={`px-3 py-1 rounded-lg text-[12px] font-bold transition font-['Manrope'] cursor-pointer ${
+                  className={`px-3 py-1 rounded-lg text-[12px] font-bold transition font-['Manrope'] cursor-pointer shrink-0 ${
                     statusFilter === "vacant"
                       ? "bg-[#0b3860] text-white shadow-xs"
                       : "text-zinc-600 hover:text-zinc-900"
@@ -199,7 +199,7 @@ export default function PropertiesList({
                   <button
                     type="button"
                     onClick={() => setStatusFilter("overdue")}
-                    className={`px-3 py-1 rounded-lg text-[12px] font-bold transition font-['Manrope'] cursor-pointer ${
+                    className={`px-3 py-1 rounded-lg text-[12px] font-bold transition font-['Manrope'] cursor-pointer shrink-0 ${
                       statusFilter === "overdue"
                         ? "bg-red-600 text-white shadow-xs"
                         : "text-red-600 hover:text-red-700"

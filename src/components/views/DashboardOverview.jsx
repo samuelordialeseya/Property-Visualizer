@@ -5,19 +5,19 @@ import { Plus, Home, AlertCircle, Building2, ArrowUp, ArrowDown, CheckCircle2, T
 /* ── Stat Card ─────────────────────────────────────────────────────────── */
 function StatCard({ label, value, subLabel, icon: Icon, iconColor, iconBg, accentGradient }) {
   return (
-    <div className="group relative rounded-2xl bg-white p-5 shadow-[var(--shadow-card)] border border-zinc-200/70 overflow-hidden transition-all duration-300 hover:shadow-[var(--shadow-card-hover)] hover:-translate-y-0.5">
-      <div className="flex items-start justify-between">
-        <div className="text-[11px] font-bold text-zinc-400 uppercase tracking-[0.1em] font-['Manrope']">{label}</div>
+    <div className="group relative rounded-2xl bg-white p-3.5 sm:p-5 shadow-[var(--shadow-card)] border border-zinc-200/70 overflow-hidden transition-all duration-300 hover:shadow-[var(--shadow-card-hover)] hover:-translate-y-0.5">
+      <div className="flex items-start justify-between gap-1">
+        <div className="text-[10px] sm:text-[11px] font-bold text-zinc-400 uppercase tracking-[0.08em] sm:tracking-[0.1em] font-['Manrope'] truncate">{label}</div>
         {Icon && (
-          <div className={`rounded-xl p-2.5 ${iconBg} ${iconColor} transition-transform group-hover:scale-110 duration-300 shadow-sm`}>
-            <Icon size={16} strokeWidth={2.5} />
+          <div className={`rounded-xl p-2 sm:p-2.5 ${iconBg} ${iconColor} transition-transform group-hover:scale-110 duration-300 shadow-sm shrink-0`}>
+            <Icon size={14} className="sm:w-4 sm:h-4" strokeWidth={2.5} />
           </div>
         )}
       </div>
-      <div className="mt-3">
-        <div className="text-[30px] font-[800] leading-none text-zinc-900 tracking-tight font-['Sora']">{value}</div>
+      <div className="mt-2.5 sm:mt-3">
+        <div className="text-[22px] sm:text-[30px] font-[800] leading-none text-zinc-900 tracking-tight font-['Sora']">{value}</div>
         {subLabel && (
-          <div className="mt-3 text-[11px] font-semibold font-['Manrope']">
+          <div className="mt-2.5 sm:mt-3 text-[10px] sm:text-[11px] font-semibold font-['Manrope'] truncate">
             {subLabel}
           </div>
         )}

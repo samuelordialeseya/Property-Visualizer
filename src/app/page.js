@@ -144,7 +144,7 @@ export default function Home() {
   const buildingUnits = units.filter((u) => u.buildingId === selectedBuilding?.id);
 
   return (
-    <main className={`flex h-screen w-screen overflow-hidden font-sans ${activeView === "3d_view" ? "bg-[#0b0f13]" : "bg-zinc-100"}`}>
+    <main className={`flex h-[100dvh] w-full max-w-full overflow-hidden font-sans ${activeView === "3d_view" ? "bg-[#0b0f13]" : "bg-zinc-100"}`}>
       <Sidebar
         user={user}
         activeView={activeView}
@@ -154,7 +154,7 @@ export default function Home() {
         onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
       />
 
-      <div className={`flex-1 h-full min-h-0 flex flex-col overflow-hidden relative ${activeView !== "3d_view" ? "pb-16 md:pb-0" : "bg-[#0b0f13]"}`}>
+      <div className={`flex-1 h-full min-h-0 flex flex-col overflow-hidden relative ${activeView !== "3d_view" ? "pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:pb-0" : "bg-[#0b0f13]"}`}>
         {activeView === "dashboard" && (
           <div key="dashboard" className="flex-1 flex flex-col overflow-hidden animate-fade-in">
             <DashboardOverview 
