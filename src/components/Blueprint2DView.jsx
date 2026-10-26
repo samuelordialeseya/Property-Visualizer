@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useMemo } from "react";
-import { ZoomIn, ZoomOut, RotateCcw, Wrench, User, Maximize2, Box } from "lucide-react";
+import { ZoomIn, ZoomOut, RotateCcw, Wrench, Box } from "lucide-react";
 
 const STATUS_CONFIG = {
   occupied: { border: "#d98a53", bg: "rgba(217, 138, 83, 0.18)", label: "Occupied", pillBg: "#d98a53" },
@@ -21,7 +21,13 @@ export default function Blueprint2DView({
   hoveredUnitId,
   onHover,
   onEnterEditMode,
+  siteContext = {},
+  buildingAddress = "",
 }) {
+  const streetLabel =
+    siteContext?.streetName?.trim() ||
+    (buildingAddress ? buildingAddress.split(",")[0].trim() : "Front Street (Main Road)");
+  const showMainGate = siteContext?.showMainGate !== false;
   const containerRef = useRef(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -36,7 +42,21 @@ export default function Blueprint2DView({
     });
   }, [units, activeFloor]);
 
-  // Calculate bounding box in world meters
+  // Separate structural elements (render underneath) from rentable units
+  const { structuralUnits, rentableUnits } = useMemo(() => {
+    const structural = [];
+    const rentable = [];
+    floorUnits.forEach((u) => {
+      if (u.element_type && u.element_type !== "unit") {
+        structural.push(u);
+      } else {
+        rentable.push(u);
+      }
+    });
+    return { structuralUnits: structural, rentableUnits: rentable };
+  }, [floorUnits]);
+
+  // Calculate bounding box in world meters (including balconies)
   const bounds = useMemo(() => {
     if (floorUnits.length === 0) return { minX: -5, maxX: 5, minZ: -5, maxZ: 5, width: 10, depth: 10, centerX: 0, centerZ: 0 };
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -47,10 +67,11 @@ export default function Blueprint2DView({
       const isRot = rot === 90 || rot === 270;
       const w = isRot ? (u.depth || 3.2) : (u.width || 2.6);
       const d = isRot ? (u.width || 2.6) : (u.depth || 3.2);
-      minX = Math.min(minX, x - w / 2);
-      maxX = Math.max(maxX, x + w / 2);
-      minZ = Math.min(minZ, z - d / 2);
-      maxZ = Math.max(maxZ, z + d / 2);
+      const bPad = u.has_balcony ? (u.balcony_depth || 1.0) : 0;
+      minX = Math.min(minX, x - w / 2 - bPad);
+      maxX = Math.max(maxX, x + w / 2 + bPad);
+      minZ = Math.min(minZ, z - d / 2 - bPad);
+      maxZ = Math.max(maxZ, z + d / 2 + bPad);
     });
     // Add padding around building
     minX -= 2;
@@ -130,6 +151,10 @@ export default function Blueprint2DView({
               <rect width={PIXELS_PER_METER} height={PIXELS_PER_METER} fill="url(#smallGrid)" />
               <path d={`M ${PIXELS_PER_METER} 0 L 0 0 0 ${PIXELS_PER_METER}`} fill="none" stroke="#222f3d" strokeWidth="1.2" />
             </pattern>
+            {/* Architectural diagonal hatch for hallways */}
+            <pattern id="corridorHatch" width="12" height="12" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+              <line x1="0" y1="0" x2="0" y2="12" stroke="#334155" strokeWidth="1.5" opacity="0.45" />
+            </pattern>
           </defs>
 
           {/* Background grid rect */}
@@ -145,8 +170,138 @@ export default function Blueprint2DView({
           <line x1="-30" y1="0" x2="30" y2="0" stroke="#38bdf8" strokeWidth="1" strokeDasharray="3 3" opacity="0.4" />
           <line x1="0" y1="-30" x2="0" y2="30" stroke="#38bdf8" strokeWidth="1" strokeDasharray="3 3" opacity="0.4" />
 
-          {/* Render Rooms */}
-          {floorUnits.map((unit) => {
+          {/* 0. Street & Main Entrance Gate Context Strip (Bottom / Front +Z) */}
+          <g transform={`translate(${bounds.minX * PIXELS_PER_METER}, ${(bounds.maxZ - 0.9) * PIXELS_PER_METER})`}>
+            <rect
+              x="0"
+              y="0"
+              width={bounds.width * PIXELS_PER_METER}
+              height={46}
+              rx="8"
+              fill="#141d29"
+              stroke="#334155"
+              strokeWidth="1.5"
+            />
+            <line
+              x1="16"
+              y1="23"
+              x2={bounds.width * PIXELS_PER_METER - 16}
+              y2="23"
+              stroke="#eab308"
+              strokeWidth="2"
+              strokeDasharray="14 10"
+              opacity="0.7"
+            />
+            <foreignObject x="0" y="0" width={bounds.width * PIXELS_PER_METER} height={46}>
+              <div className="w-full h-full flex items-center justify-between px-4 pointer-events-none select-none">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-sky-300 bg-[#0b3860]/90 border border-[#479de9]/50 px-2.5 py-0.5 rounded-full">
+                  🛣️ {streetLabel}
+                </span>
+                {showMainGate && (
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-amber-300 bg-amber-950/90 border border-amber-400/50 px-2.5 py-0.5 rounded-full">
+                    ▲ MAIN ENTRANCE GATE ▲
+                  </span>
+                )}
+                <span className="text-[10px] font-mono text-slate-400">
+                  FRONT ELEVATION (SOUTH +Z)
+                </span>
+              </div>
+            </foreignObject>
+          </g>
+
+          {/* 1. Render Structural Elements (Hallways, Walk-Up Corridors, Stairwells) */}
+          {structuralUnits.map((el) => {
+            const rot = el.rotation || 0;
+            const isRot = rot === 90 || rot === 270;
+            const w = isRot ? (el.depth || 2.0) : (el.width || 6.0);
+            const d = isRot ? (el.width || 6.0) : (el.depth || 2.0);
+
+            const pxW = w * PIXELS_PER_METER;
+            const pxD = d * PIXELS_PER_METER;
+            const pxX = (el.x || 0) * PIXELS_PER_METER - pxW / 2;
+            const pxZ = (el.z || 0) * PIXELS_PER_METER - pxD / 2;
+
+            const isStairs = el.element_type === "stairwell";
+            const isBalconyWalkway = el.element_type === "balcony_walkway";
+
+            // Generate stair treads if stairwell
+            const stepCount = 7;
+            const stairLines = [];
+            if (isStairs) {
+              const alongX = pxW >= pxD;
+              for (let i = 1; i < stepCount; i++) {
+                const frac = i / stepCount;
+                if (alongX) {
+                  stairLines.push(
+                    <line
+                      key={i}
+                      x1={pxW * frac}
+                      y1={4}
+                      x2={pxW * frac}
+                      y2={pxD - 4}
+                      stroke="#64748b"
+                      strokeWidth="1.5"
+                    />
+                  );
+                } else {
+                  stairLines.push(
+                    <line
+                      key={i}
+                      x1={4}
+                      y1={pxD * frac}
+                      x2={pxW - 4}
+                      y2={pxD * frac}
+                      stroke="#64748b"
+                      strokeWidth="1.5"
+                    />
+                  );
+                }
+              }
+            }
+
+            return (
+              <g key={el.id} transform={`translate(${pxX}, ${pxZ})`} style={{ opacity: q ? 0.35 : 0.9 }}>
+                <rect
+                  x="0"
+                  y="0"
+                  width={pxW}
+                  height={pxD}
+                  rx="4"
+                  fill={isStairs ? "rgba(30, 41, 59, 0.75)" : "rgba(15, 23, 42, 0.7)"}
+                  stroke={isStairs ? "#64748b" : "#334155"}
+                  strokeWidth="1.5"
+                  strokeDasharray={isBalconyWalkway ? "6 3" : "none"}
+                />
+                {!isStairs && (
+                  <rect x="0" y="0" width={pxW} height={pxD} rx="4" fill="url(#corridorHatch)" />
+                )}
+                {isStairs && (
+                  <>
+                    {stairLines}
+                    {/* Stair direction centerline */}
+                    <line
+                      x1={pxW * 0.2}
+                      y1={pxD * 0.5}
+                      x2={pxW * 0.8}
+                      y2={pxD * 0.5}
+                      stroke="#38bdf8"
+                      strokeWidth="1.5"
+                    />
+                  </>
+                )}
+                <foreignObject x="2" y="2" width={Math.max(20, pxW - 4)} height={Math.max(16, pxD - 4)}>
+                  <div className="w-full h-full flex flex-col items-center justify-center text-center select-none pointer-events-none">
+                    <span className="text-[9.5px] font-bold uppercase tracking-widest text-slate-300 bg-[#0b0f13]/80 px-1.5 py-0.5 rounded border border-white/10">
+                      {el.unit_label || (isStairs ? "STAIRS UP" : isBalconyWalkway ? "WALK-UP BALCONY" : "CORRIDOR")}
+                    </span>
+                  </div>
+                </foreignObject>
+              </g>
+            );
+          })}
+
+          {/* 2. Render Rentable Units + Attached Balconies */}
+          {rentableUnits.map((unit) => {
             const rot = unit.rotation || 0;
             const isRot = rot === 90 || rot === 270;
             const w = isRot ? (unit.depth || 3.2) : (unit.width || 2.6);
@@ -168,6 +323,18 @@ export default function Blueprint2DView({
 
             const status = STATUS_CONFIG[unit.status] || STATUS_CONFIG.vacant;
 
+            // Balcony projection calculation in SVG pixels
+            const hasBalcony = !!unit.has_balcony;
+            const bSide = unit.balcony_side || "S";
+            const bDepthPx = (unit.balcony_depth || 1.0) * PIXELS_PER_METER;
+            let bRect = null;
+            if (hasBalcony) {
+              if (bSide === "S") bRect = { x: 4, y: pxD, w: Math.max(16, pxW - 8), h: bDepthPx };
+              else if (bSide === "N") bRect = { x: 4, y: -bDepthPx, w: Math.max(16, pxW - 8), h: bDepthPx };
+              else if (bSide === "E") bRect = { x: pxW, y: 4, w: bDepthPx, h: Math.max(16, pxD - 8) };
+              else if (bSide === "W") bRect = { x: -bDepthPx, y: 4, w: bDepthPx, h: Math.max(16, pxD - 8) };
+            }
+
             return (
               <g
                 key={unit.id}
@@ -181,6 +348,35 @@ export default function Blueprint2DView({
                 className="cursor-pointer transition-opacity duration-150"
                 style={{ opacity: isDimmed ? 0.2 : 1 }}
               >
+                {/* Private Balcony Projection (if enabled) */}
+                {bRect && (
+                  <g>
+                    <rect
+                      x={bRect.x}
+                      y={bRect.y}
+                      width={bRect.w}
+                      height={bRect.h}
+                      rx="3"
+                      fill="rgba(56, 189, 248, 0.08)"
+                      stroke="#38bdf8"
+                      strokeWidth="1.4"
+                      strokeDasharray="4 2"
+                    />
+                    <text
+                      x={bRect.x + bRect.w / 2}
+                      y={bRect.y + bRect.h / 2 + 3}
+                      textAnchor="middle"
+                      fill="#7dd3fc"
+                      fontSize="8"
+                      fontFamily="Manrope, sans-serif"
+                      fontWeight="700"
+                      letterSpacing="0.08em"
+                    >
+                      BALCONY
+                    </text>
+                  </g>
+                )}
+
                 {/* Room Outer Wall / Fill */}
                 <rect
                   x="0"
@@ -202,6 +398,17 @@ export default function Blueprint2DView({
                   height="4"
                   rx="2"
                   fill={status.pillBg}
+                />
+
+                {/* Architectural Door Threshold Indicator */}
+                <rect
+                  x={pxW / 2 - 12}
+                  y={pxD - 3}
+                  width="24"
+                  height="5"
+                  rx="1.5"
+                  fill="#38bdf8"
+                  opacity="0.85"
                 />
 
                 {/* Room Center Content: SVG ForeignObject */}

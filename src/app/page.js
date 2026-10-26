@@ -137,11 +137,13 @@ export default function Home() {
     handleSetActiveView("dashboard");
   };
 
-  const selectedBuilding = 
-    buildings.find((b) => b.id === selectedBuildingId) || 
+  const selectedBuilding =
+    buildings.find((b) => b.id === selectedBuildingId) ||
     (optimisticBuilding?.id === selectedBuildingId ? optimisticBuilding : null) ||
     (buildings.length > 0 && activeView === "3d_view" ? buildings[0] : null);
   const buildingUnits = units.filter((u) => u.buildingId === selectedBuilding?.id);
+  const rentableUnits = units.filter((u) => !u.element_type || u.element_type === "unit");
+  const rentableBuildingUnits = buildingUnits.filter((u) => !u.element_type || u.element_type === "unit");
 
   return (
     <main className={`flex h-[100dvh] w-full max-w-full overflow-hidden font-sans ${activeView === "3d_view" ? "bg-[#0b0f13]" : "bg-zinc-100"}`}>
@@ -157,22 +159,22 @@ export default function Home() {
       <div className={`flex-1 h-full min-h-0 flex flex-col overflow-hidden relative ${activeView !== "3d_view" ? "pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:pb-0" : "bg-[#0b0f13]"}`}>
         {activeView === "dashboard" && (
           <div key="dashboard" className="flex-1 flex flex-col overflow-hidden animate-fade-in">
-            <DashboardOverview 
-              buildings={buildings} 
-              units={units} 
+            <DashboardOverview
+              buildings={buildings}
+              units={rentableUnits}
               onAddBuilding={handleNewBuildingFromDashboard}
               onSelectProperty={handleSelectProperty}
               onOpen3D={handleOpen3D}
             />
           </div>
         )}
-        
+
         {activeView === "properties" && (
           <div key="properties" className="flex-1 flex flex-col overflow-hidden animate-fade-in">
-            <PropertiesList 
-              buildings={buildings} 
-              units={units} 
-              onSelectProperty={handleSelectProperty} 
+            <PropertiesList
+              buildings={buildings}
+              units={rentableUnits}
+              onSelectProperty={handleSelectProperty}
               onAddBuilding={handleNewBuildingFromDashboard}
               onOpen3D={handleOpen3D}
             />
@@ -181,7 +183,7 @@ export default function Home() {
 
         {activeView === "settings" && (
           <div key="settings" className="flex-1 flex flex-col overflow-hidden animate-fade-in">
-            <SettingsTab user={user} buildings={buildings} units={units} />
+            <SettingsTab user={user} buildings={buildings} units={rentableUnits} />
           </div>
         )}
 
@@ -189,7 +191,7 @@ export default function Home() {
           <div key={`property_detail_${selectedBuilding.id}`} className="flex-1 flex flex-col overflow-hidden animate-fade-in">
             <PropertyDetail
               building={selectedBuilding}
-              units={buildingUnits}
+              units={rentableBuildingUnits}
               buildings={buildings}
               userId={user?.uid}
               updateUnit={updateUnit}
@@ -213,7 +215,10 @@ export default function Home() {
                 onCancelNewBuilding={handleCancelNewBuilding}
                 units={buildingUnits}
                 selectedUnitId={selectedUnit3D?.id}
-                onSelectUnit={(unit) => setSelectedUnit3D(unit)}
+                onSelectUnit={(unit) => {
+                  if (unit && unit.element_type && unit.element_type !== "unit") return;
+                  setSelectedUnit3D(unit);
+                }}
                 onSaveLayout={async (editorRooms, deletedRoomIds) => {
                   // 1. Process deletions
                   for (const dId of deletedRoomIds) {
@@ -228,8 +233,8 @@ export default function Home() {
                     const unitData = {
                       unit_label: room.unit_label,
                       floor: room.floor,
-                      status: room.status,
-                      monthly_rent: room.monthly_rent,
+                      status: room.status || "vacant",
+                      monthly_rent: room.monthly_rent || 0,
                       x: room.x,
                       z: room.z,
                       width: room.width,
@@ -240,7 +245,11 @@ export default function Home() {
                       material_type: room.material_type || 'stucco',
                       texture_url: room.texture_url || null,
                       wall_color: room.wall_color || '#4a5a66',
-                      tenant: room.tenant,
+                      element_type: room.element_type || 'unit',
+                      has_balcony: !!room.has_balcony,
+                      balcony_side: room.balcony_side || 'S',
+                      balcony_depth: room.balcony_depth || 1.0,
+                      tenant: room.tenant || null,
                       buildingId: selectedBuilding.id
                     };
 

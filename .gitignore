@@ -42,3 +42,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+*.mp4
+*.webm
+*.mp3
+audio_generated*/
+audio_out/
+test_audio*/

@@ -6,7 +6,7 @@ import * as THREE from "three";
 import { applyMaterialToRef } from "@/lib/textureGenerator";
 
 const UNIT_H = 2.2;
-const MIN_DIM = 1.0;
+const MIN_DIM = 0.8;
 const GRID_SNAP = 0.5;
 const ADJACENCY_THR = 0.14;  // within this distance → walls are "touching"
 const MAGNET_SNAP = 0.9;     // snap-to-edge radius while dragging
@@ -88,7 +88,6 @@ function magnetSnap(candidate, allRooms) {
 function WallArrow({ pos, dir, onDragStart }) {
   const [hov, setHov] = useState(false);
 
-  // Cone default points UP (+Y). Rotate so it points in `dir`.
   const rotMap = {
     E: [0, 0, -Math.PI / 2],
     W: [0, 0, Math.PI / 2],
@@ -115,7 +114,53 @@ function WallArrow({ pos, dir, onDragStart }) {
   );
 }
 
-function EditableRoom({ room, isSelected, rooms, startMoveDrag, startWallDrag, setDragState }) {
+// 3D Balcony attachment for EditableRoom
+function EditableBalcony3D({ bw, bd, bh, side = "S", depth = 1.0 }) {
+  const railH = 0.85;
+  const slabH = 0.12;
+  const baseY = -bh / 2 + slabH / 2;
+
+  let pos = [0, baseY, bd / 2 + depth / 2];
+  let size = [bw - 0.1, slabH, depth];
+  let railFrontPos = [0, baseY + railH / 2, bd / 2 + depth - 0.04];
+  let railFrontSize = [bw - 0.1, railH, 0.05];
+
+  if (side === "N") {
+    pos = [0, baseY, -bd / 2 - depth / 2];
+    size = [bw - 0.1, slabH, depth];
+    railFrontPos = [0, baseY + railH / 2, -bd / 2 - depth + 0.04];
+    railFrontSize = [bw - 0.1, railH, 0.05];
+  } else if (side === "E") {
+    pos = [bw / 2 + depth / 2, baseY, 0];
+    size = [depth, slabH, bd - 0.1];
+    railFrontPos = [bw / 2 + depth - 0.04, baseY + railH / 2, 0];
+    railFrontSize = [0.05, railH, bd - 0.1];
+  } else if (side === "W") {
+    pos = [-bw / 2 - depth / 2, baseY, 0];
+    size = [depth, slabH, bd - 0.1];
+    railFrontPos = [-bw / 2 - depth + 0.04, baseY + railH / 2, 0];
+    railFrontSize = [0.05, railH, bd - 0.1];
+  }
+
+  return (
+    <group>
+      {/* Cantilevered Slab */}
+      <mesh position={pos}>
+        <boxGeometry args={size} />
+        <meshStandardMaterial color="#334155" roughness={0.7} />
+        <Edges scale={1.001} threshold={20} color="#475569" />
+      </mesh>
+      {/* Glass/Metal Front Balustrade */}
+      <mesh position={railFrontPos}>
+        <boxGeometry args={railFrontSize} />
+        <meshStandardMaterial color="#94a3b8" roughness={0.3} transparent opacity={0.45} />
+        <Edges scale={1.001} threshold={20} color="#1e293b" />
+      </mesh>
+    </group>
+  );
+}
+
+function EditableRoom({ room, isSelected, rooms, startMoveDrag, startWallDrag, setDragState, cutawayMode }) {
   const floor = room.floor || 1;
   const yOff = (floor - 1) * (UNIT_H + 0.11);
   const h = room.height || UNIT_H;
@@ -134,8 +179,11 @@ function EditableRoom({ room, isSelected, rooms, startMoveDrag, startWallDrag, s
   const z2 = room.z + room.depth / 2;
 
   const shared = getSharedWalls(room, rooms);
-  const arrowY = yOff + h * 0.55;
-  const aSep = 0.5; // arrow separation from face
+  const elType = room.element_type || "unit";
+  const isStructural = elType !== "unit";
+  const isCutaway = cutawayMode || room.roof_type === "open";
+  const arrowY = yOff + (isStructural ? 0.55 : h * 0.55);
+  const aSep = 0.5;
 
   const wallArrows = [
     { dir: "E", pos: [x2 + aSep, arrowY, room.z], show: !shared.E },
@@ -144,76 +192,218 @@ function EditableRoom({ room, isSelected, rooms, startMoveDrag, startWallDrag, s
     { dir: "N", pos: [room.x, arrowY, z1 - aSep], show: !shared.N },
   ];
 
-  // ── Material & Skinning
+  // Material & Skinning
   const matRef = useRef();
 
   useEffect(() => {
+    if (!matRef.current) return;
     const repeatX = Math.max(1, (room.width || 2.6) / 1.6);
     const repeatY = Math.max(1, (room.height || 2.2) / 1.6);
     applyMaterialToRef(matRef.current, room.material_type, room.texture_url, repeatX, repeatY, room.wall_color);
-  }, [room.texture_url, room.material_type, room.width, room.height, room.wall_color, isSelected]);
+  }, [room.texture_url, room.material_type, room.width, room.height, room.wall_color, isSelected, isCutaway, elType]);
 
   const isDefaultColor = !room.wall_color || room.wall_color === '#4a5a66' || room.wall_color === '#5b6c7d';
   const baseColor = isDefaultColor ? (isSelected ? "#6a7d90" : "#5b6c7d") : room.wall_color;
+  const wallT = 0.14;
+  const cutH = Math.min(bh, 1.75);
 
   return (
     <group>
-      {/* ── Room body ───────────────────────────────────────── */}
-      <group position={[room.x, yOff + h / 2, room.z]} rotation={[0, rad, 0]}>
-        <mesh
-          castShadow
-          receiveShadow
-          onPointerDown={(e) => startMoveDrag(e, room.id)}
-        >
-          <boxGeometry args={[bw, bh, bd]} />
-          <meshStandardMaterial
-            ref={matRef}
-            color={baseColor}
-            roughness={0.55}
-            emissive={isSelected ? "#32b883" : "#000"}
-            emissiveIntensity={isSelected ? 0.2 : 0}
-          />
-          {isSelected && <Edges scale={1.002} threshold={15} color="#32b883" />}
-        </mesh>
-        {/* Door orientation marker */}
-        <mesh position={[0, -bh / 2 + 0.5, bd / 2 + 0.03]}>
-          <planeGeometry args={[0.55, 1.0]} />
-          <meshStandardMaterial color={isSelected ? "#32b883" : "#479de9"} roughness={0.5} side={THREE.DoubleSide} />
-        </mesh>
-      </group>
-
-      {/* ── Status strip at base ─────────────────────────────── */}
-      <mesh position={[room.x, yOff + 0.07, room.z]}>
-        <boxGeometry args={[room.width - 0.02, 0.14, room.depth - 0.02]} />
-        <meshStandardMaterial color={STATUS_COLOR[room.status] || STATUS_COLOR.vacant} roughness={0.6} />
-      </mesh>
-
-      {/* ── Roof ───────────────────────────────────── */}
-      {room.roof_type === 'triangle' ? (
-        <group position={[room.x, yOff + h, room.z]}>
-          <mesh position={[0, 0.055, 0]} castShadow receiveShadow>
-            <boxGeometry args={[room.width + 0.2, 0.11, room.depth + 0.2]} />
-            <meshStandardMaterial color="#3d4e5e" roughness={0.6} />
-            {isSelected && <Edges scale={1.001} threshold={20} color="#32b883" />}
+      {/* ── 1. STRUCTURAL HALLWAY / WALKWAY ───────────────────────── */}
+      {(elType === "hallway" || elType === "balcony_walkway") && (
+        <group position={[room.x, yOff, room.z]} rotation={[0, rad, 0]}>
+          <mesh
+            position={[0, 0.09, 0]}
+            castShadow
+            receiveShadow
+            onPointerDown={(e) => startMoveDrag(e, room.id)}
+          >
+            <boxGeometry args={[bw, 0.18, bd]} />
+            <meshStandardMaterial
+              color={isSelected ? "#3b5268" : "#263240"}
+              roughness={0.75}
+              emissive={isSelected ? "#32b883" : "#000000"}
+              emissiveIntensity={isSelected ? 0.25 : 0}
+            />
+            <Edges scale={1.002} threshold={15} color={isSelected ? "#32b883" : "#38bdf8"} />
           </mesh>
-          <mesh position={[0, 0.11 + 0.5, 0]} castShadow receiveShadow rotation={[0, Math.PI / 4, 0]} scale={[(room.width + 0.2) / Math.SQRT2, 1, (room.depth + 0.2) / Math.SQRT2]}>
-            <coneGeometry args={[1, 1, 4]} />
-            <meshStandardMaterial color="#3d4e5e" roughness={0.6} />
-            {isSelected && <Edges scale={1.001} threshold={20} color="#32b883" />}
-          </mesh>
+          {/* Walk-up exterior railing if balcony_walkway */}
+          {elType === "balcony_walkway" && (
+            <mesh position={[0, 0.18 + 0.45, bd / 2 - 0.04]} onPointerDown={(e) => startMoveDrag(e, room.id)}>
+              <boxGeometry args={[bw, 0.9, 0.05]} />
+              <meshStandardMaterial color="#94a3b8" transparent opacity={0.45} roughness={0.3} />
+              <Edges scale={1.001} threshold={20} color="#1e293b" />
+            </mesh>
+          )}
         </group>
-      ) : (
-        <group position={[room.x, yOff + h + 0.055, room.z]}>
-          <mesh castShadow receiveShadow>
-            <boxGeometry args={[room.width + 0.2, 0.11, room.depth + 0.2]} />
-            <meshStandardMaterial color="#3d4e5e" roughness={0.6} />
-            {isSelected && <Edges scale={1.001} threshold={20} color="#32b883" />}
+      )}
+
+      {/* ── 2. STRUCTURAL 3D STAIRWELL ────────────────────────────── */}
+      {elType === "stairwell" && (
+        <group position={[room.x, yOff, room.z]} rotation={[0, rad, 0]}>
+          {/* Base landing slab */}
+          <mesh position={[0, 0.08, 0]} onPointerDown={(e) => startMoveDrag(e, room.id)}>
+            <boxGeometry args={[bw, 0.16, bd]} />
+            <meshStandardMaterial color={isSelected ? "#3b5268" : "#1e293b"} roughness={0.7} />
+            <Edges scale={1.002} threshold={15} color={isSelected ? "#32b883" : "#475569"} />
           </mesh>
-          <mesh position={[0, 0.06, 0]}>
-            <boxGeometry args={[room.width + 0.04, 0.02, room.depth + 0.04]} />
-            <meshStandardMaterial color="#2d3c4a" roughness={0.5} />
-          </mesh>
+          {/* Procedural stair steps */}
+          {Array.from({ length: 8 }).map((_, idx) => {
+            const stepFrac = (idx + 1) / 8;
+            const stepY = stepFrac * (UNIT_H - 0.15);
+            const stepZ = -bd / 2 + (idx + 0.5) * (bd / 8);
+            return (
+              <mesh
+                key={idx}
+                position={[0, stepY / 2 + 0.08, stepZ]}
+                onPointerDown={(e) => startMoveDrag(e, room.id)}
+              >
+                <boxGeometry args={[bw * 0.82, stepY, (bd / 8) * 0.92]} />
+                <meshStandardMaterial color="#475569" roughness={0.6} />
+                <Edges scale={1.001} threshold={20} color={isSelected ? "#32b883" : "#1e293b"} />
+              </mesh>
+            );
+          })}
         </group>
+      )}
+
+      {/* ── 3. RENTABLE UNIT (SOLID OR CUTAWAY DOLLHOUSE) ─────────── */}
+      {elType === "unit" && (
+        <>
+          {isCutaway ? (
+            <group position={[room.x, yOff, room.z]} rotation={[0, rad, 0]}>
+              {/* Status-Tinted Interior Floor Slab */}
+              <mesh
+                position={[0, 0.08, 0]}
+                receiveShadow
+                onPointerDown={(e) => startMoveDrag(e, room.id)}
+              >
+                <boxGeometry args={[bw, 0.16, bd]} />
+                <meshStandardMaterial
+                  color={STATUS_COLOR[room.status] || STATUS_COLOR.vacant}
+                  roughness={0.65}
+                  emissive={isSelected ? "#32b883" : "#000000"}
+                  emissiveIntensity={isSelected ? 0.25 : 0}
+                />
+                <Edges scale={1.001} threshold={20} color={isSelected ? "#32b883" : "#1e293b"} />
+              </mesh>
+              {/* North Back Wall */}
+              <mesh position={[0, cutH / 2 + 0.08, -bd / 2 + wallT / 2]} onPointerDown={(e) => startMoveDrag(e, room.id)}>
+                <boxGeometry args={[bw, cutH, wallT]} />
+                <meshStandardMaterial color={baseColor} roughness={0.55} />
+                <Edges scale={1.001} threshold={20} color={isSelected ? "#32b883" : "#1e293b"} />
+              </mesh>
+              {/* West Left Wall */}
+              <mesh position={[-bw / 2 + wallT / 2, cutH / 2 + 0.08, 0]} onPointerDown={(e) => startMoveDrag(e, room.id)}>
+                <boxGeometry args={[wallT, cutH, bd]} />
+                <meshStandardMaterial color={baseColor} roughness={0.55} />
+                <Edges scale={1.001} threshold={20} color={isSelected ? "#32b883" : "#1e293b"} />
+              </mesh>
+              {/* East Right Wall */}
+              <mesh position={[bw / 2 - wallT / 2, cutH / 2 + 0.08, 0]} onPointerDown={(e) => startMoveDrag(e, room.id)}>
+                <boxGeometry args={[wallT, cutH, bd]} />
+                <meshStandardMaterial color={baseColor} roughness={0.55} />
+                <Edges scale={1.001} threshold={20} color={isSelected ? "#32b883" : "#1e293b"} />
+              </mesh>
+              {/* South Entrance Wall (Split for Doorway Cutout) */}
+              <mesh position={[-bw * 0.32, cutH / 2 + 0.08, bd / 2 - wallT / 2]} onPointerDown={(e) => startMoveDrag(e, room.id)}>
+                <boxGeometry args={[bw * 0.36, cutH, wallT]} />
+                <meshStandardMaterial color={baseColor} roughness={0.55} />
+                <Edges scale={1.001} threshold={20} color={isSelected ? "#32b883" : "#1e293b"} />
+              </mesh>
+              <mesh position={[bw * 0.32, cutH / 2 + 0.08, bd / 2 - wallT / 2]} onPointerDown={(e) => startMoveDrag(e, room.id)}>
+                <boxGeometry args={[bw * 0.36, cutH, wallT]} />
+                <meshStandardMaterial color={baseColor} roughness={0.55} />
+                <Edges scale={1.001} threshold={20} color={isSelected ? "#32b883" : "#1e293b"} />
+              </mesh>
+              {/* Balcony if enabled */}
+              {room.has_balcony && (
+                <group position={[0, h / 2, 0]}>
+                  <EditableBalcony3D bw={bw} bd={bd} bh={bh} side={room.balcony_side || "S"} depth={room.balcony_depth || 1.0} />
+                </group>
+              )}
+            </group>
+          ) : (
+            <group position={[room.x, yOff + h / 2, room.z]} rotation={[0, rad, 0]}>
+              <mesh
+                castShadow
+                receiveShadow
+                onPointerDown={(e) => startMoveDrag(e, room.id)}
+              >
+                <boxGeometry args={[bw, bh, bd]} />
+                <meshStandardMaterial
+                  ref={matRef}
+                  color={baseColor}
+                  roughness={0.55}
+                  emissive={isSelected ? "#32b883" : "#000"}
+                  emissiveIntensity={isSelected ? 0.2 : 0}
+                />
+                {isSelected && <Edges scale={1.002} threshold={15} color="#32b883" />}
+              </mesh>
+              {/* Door orientation marker */}
+              <mesh position={[0, -bh / 2 + 0.5, bd / 2 + 0.03]}>
+                <planeGeometry args={[0.55, 1.0]} />
+                <meshStandardMaterial color={isSelected ? "#32b883" : "#479de9"} roughness={0.5} side={THREE.DoubleSide} />
+              </mesh>
+              {/* Balcony if enabled */}
+              {room.has_balcony && (
+                <EditableBalcony3D bw={bw} bd={bd} bh={bh} side={room.balcony_side || "S"} depth={room.balcony_depth || 1.0} />
+              )}
+            </group>
+          )}
+
+          {/* Status strip at base (Solid mode) */}
+          {!isCutaway && (
+            <mesh position={[room.x, yOff + 0.07, room.z]}>
+              <boxGeometry args={[room.width - 0.02, 0.14, room.depth - 0.02]} />
+              <meshStandardMaterial color={STATUS_COLOR[room.status] || STATUS_COLOR.vacant} roughness={0.6} />
+            </mesh>
+          )}
+
+          {/* Roof (Solid mode only) */}
+          {!isCutaway && (
+            room.roof_type === 'triangle' ? (
+              <group position={[room.x, yOff + h, room.z]}>
+                <mesh position={[0, 0.055, 0]} castShadow receiveShadow>
+                  <boxGeometry args={[room.width + 0.2, 0.11, room.depth + 0.2]} />
+                  <meshStandardMaterial color="#3d4e5e" roughness={0.6} />
+                  {isSelected && <Edges scale={1.001} threshold={20} color="#32b883" />}
+                </mesh>
+                <mesh position={[0, 0.11 + 0.5, 0]} castShadow receiveShadow rotation={[0, Math.PI / 4, 0]} scale={[(room.width + 0.2) / Math.SQRT2, 1, (room.depth + 0.2) / Math.SQRT2]}>
+                  <coneGeometry args={[1, 1, 4]} />
+                  <meshStandardMaterial color="#3d4e5e" roughness={0.6} />
+                  {isSelected && <Edges scale={1.001} threshold={20} color="#32b883" />}
+                </mesh>
+              </group>
+            ) : room.roof_type === 'parapet' ? (
+              <group position={[room.x, yOff + h + 0.055, room.z]}>
+                <mesh castShadow receiveShadow>
+                  <boxGeometry args={[room.width + 0.12, 0.11, room.depth + 0.12]} />
+                  <meshStandardMaterial color="#334155" roughness={0.6} />
+                  {isSelected && <Edges scale={1.001} threshold={20} color="#32b883" />}
+                </mesh>
+                {/* Raised architectural parapet rim */}
+                <mesh position={[0, 0.12, 0]}>
+                  <boxGeometry args={[room.width + 0.16, 0.16, room.depth + 0.16]} />
+                  <meshStandardMaterial color="#475569" roughness={0.5} />
+                  <Edges scale={1.001} threshold={20} color="#1e293b" />
+                </mesh>
+              </group>
+            ) : (
+              <group position={[room.x, yOff + h + 0.055, room.z]}>
+                <mesh castShadow receiveShadow>
+                  <boxGeometry args={[room.width + 0.2, 0.11, room.depth + 0.2]} />
+                  <meshStandardMaterial color="#3d4e5e" roughness={0.6} />
+                  {isSelected && <Edges scale={1.001} threshold={20} color="#32b883" />}
+                </mesh>
+                <mesh position={[0, 0.06, 0]}>
+                  <boxGeometry args={[room.width + 0.04, 0.02, room.depth + 0.04]} />
+                  <meshStandardMaterial color="#2d3c4a" roughness={0.5} />
+                </mesh>
+              </group>
+            )
+          )}
+        </>
       )}
 
       {/* ── Shared-wall "seam" highlight (visual lock indicator) ── */}
@@ -254,8 +444,8 @@ function EditableRoom({ room, isSelected, rooms, startMoveDrag, startWallDrag, s
         )
       )}
 
-      {/* ── Height handle (top cone) ─────────────────────────── */}
-      {isSelected && (
+      {/* ── Height handle (top cone, for rentable units) ─────────── */}
+      {isSelected && elType === "unit" && (
         <mesh
           position={[room.x, yOff + h + 0.35, room.z]}
           onPointerDown={(e) => {
@@ -273,7 +463,7 @@ function EditableRoom({ room, isSelected, rooms, startMoveDrag, startWallDrag, s
 }
 
 // --- MAIN EDITOR -----------------------------------------------------------
-export default function RoomLayoutEditor({ rooms, onChange, selectedRoomId, onSelectRoom }) {
+export default function RoomLayoutEditor({ rooms, onChange, selectedRoomId, onSelectRoom, cutawayMode = false }) {
   const { controls, raycaster } = useThree();
 
   // dragState: { roomId, type: "move" | "wall-E" | "wall-W" | "wall-N" | "wall-S" | "height" }
@@ -422,6 +612,7 @@ export default function RoomLayoutEditor({ rooms, onChange, selectedRoomId, onSe
           startMoveDrag={startMoveDrag}
           startWallDrag={startWallDrag}
           setDragState={setDragState}
+          cutawayMode={cutawayMode}
         />
       ))}
     </group>
