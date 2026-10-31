@@ -1,0 +1,1230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Property Visualizer — Dynamic Motion Graphics Showreel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #000;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100vw;
+      height: 100vh;
+      font-family: 'Sora', sans-serif;
+    }
+    canvas {
+      width: 1920px;
+      height: 1080px;
+      background: #06090e;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="c" width="1920" height="1080"></canvas>
+
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+
+    // ── Assets to Preload ──────────────────────────────────────────────────
+    const assetSources = {
+      icon: 'assets/building-icon.png',
+      logoWhite: 'assets/logo-horizontal-white.png',
+      dashboard: 'assets/showreel_screen_01_dashboard.png',
+      propDetail: 'assets/showreel_screen_02_property_detail.png',
+      spatial3d: 'assets/showreel_screen_04_3d_spatial.png',
+      cinematic3d: 'assets/showreel_3d_angle_cinematic.png',
+      blueprint2d: 'assets/showreel_screen_05_2d_blueprint.png'
+    };
+    const images = {};
+
+    function loadImage(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = src;
+      });
+    }
+
+    async function preloadAll() {
+      await document.fonts.ready;
+      for (const [key, src] of Object.entries(assetSources)) {
+        images[key] = await loadImage(src);
+      }
+      console.log('All images and Google fonts preloaded!');
+    }
+
+    // ── Math & Motion Easing Helpers ───────────────────────────────────────
+    const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+    const lerp = (a, b, t) => a + (b - a) * t;
+
+    function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+    function easeInCubic(t) { return t * t * t; }
+    function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+    function easeOutExpo(t) { return t === 1 ? 1 : 1 - Math.pow(2, -10 * t); }
+    function easeOutBack(t, c1 = 1.70158) {
+      const c3 = c1 + 1;
+      return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+    }
+    function easeOutElastic(t) {
+      const c4 = (2 * Math.PI) / 3;
+      return t === 0 ? 0 : t === 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1;
+    }
+
+    // ── Dynamic Particle System ────────────────────────────────────────────
+    const particles = [];
+    for (let p = 0; p < 110; p++) {
+      particles.push({
+        x: Math.random() * 1920,
+        y: Math.random() * 1080,
+        r: Math.random() * 2.5 + 0.8,
+        vx: (Math.random() - 0.5) * 0.6,
+        vy: -Math.random() * 0.9 - 0.3,
+        alpha: Math.random() * 0.7 + 0.2
+      });
+    }
+
+    function drawDynamicParticles(t, color = 'rgba(71, 157, 233, ') {
+      ctx.save();
+      for (const p of particles) {
+        const py = (p.y + p.vy * t * 60) % 1080;
+        const actualY = py < 0 ? py + 1080 : py;
+        const actualX = (p.x + p.vx * t * 60 + Math.sin(t + p.r) * 15) % 1920;
+        const xPos = actualX < 0 ? actualX + 1920 : actualX;
+
+        ctx.fillStyle = `${color}${p.alpha * 0.85})`;
+        ctx.beginPath();
+        ctx.arc(xPos, actualY, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // ── Interactive Precision Cursor Simulation ────────────────────────────
+    function drawCursor(x, y, isClick = false, clickProgress = 0) {
+      ctx.save();
+      ctx.translate(x, y);
+
+      // Expanding click ring
+      if (clickProgress > 0 && clickProgress < 1) {
+        const r = clickProgress * 45;
+        const alpha = Math.max(0, 1 - clickProgress);
+        ctx.strokeStyle = `rgba(56, 189, 248, ${alpha})`;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Cursor shadow & body
+      const scale = isClick ? 0.88 : 1.0;
+      ctx.scale(scale, scale);
+
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+      ctx.shadowBlur = 12;
+      ctx.shadowOffsetY = 4;
+
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#0284c7';
+      ctx.lineWidth = 1.8;
+
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, 24);
+      ctx.lineTo(6.5, 18);
+      ctx.lineTo(13.5, 27);
+      ctx.lineTo(17.5, 24);
+      ctx.lineTo(10.5, 15);
+      ctx.lineTo(18, 15);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    // ── HUD Telemetry Overlays ─────────────────────────────────────────────
+    function drawHUD(t, sceneLabel, subLabel = '') {
+      ctx.save();
+      const pad = 44;
+      const bLen = 22;
+
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+      ctx.lineWidth = 1.5;
+
+      // Corner brackets
+      // TL
+      ctx.beginPath(); ctx.moveTo(pad, pad + bLen); ctx.lineTo(pad, pad); ctx.lineTo(pad + bLen, pad); ctx.stroke();
+      // TR
+      ctx.beginPath(); ctx.moveTo(1920 - pad - bLen, pad); ctx.lineTo(1920 - pad, pad); ctx.lineTo(1920 - pad, pad + bLen); ctx.stroke();
+      // BL
+      ctx.beginPath(); ctx.moveTo(pad, 1080 - pad - bLen); ctx.lineTo(pad, 1080 - pad); ctx.lineTo(pad + bLen, 1080 - pad); ctx.stroke();
+      // BR
+      ctx.beginPath(); ctx.moveTo(1920 - pad - bLen, 1080 - pad); ctx.lineTo(1920 - pad, 1080 - pad); ctx.lineTo(1920 - pad, 1080 - pad - bLen); ctx.stroke();
+
+      // Top-left brand readout
+      ctx.font = '700 11px Manrope';
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.85)';
+      ctx.textAlign = 'left';
+      ctx.fillText('PROPERTY VISUALIZER  //  SPATIAL OS', pad + 16, pad + 15);
+
+      // Blinking status dot
+      const blink = Math.floor(t * 3.5) % 2 === 0;
+      ctx.fillStyle = blink ? '#10b981' : 'rgba(16, 185, 129, 0.25)';
+      ctx.beginPath();
+      ctx.arc(pad + 6, pad + 12, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Top-right scene & time
+      ctx.textAlign = 'right';
+      ctx.fillText(`TIME: ${t.toFixed(2)}s  |  60.00s  •  ${sceneLabel}`, 1920 - pad - 12, pad + 15);
+
+      // Bottom telemetry
+      ctx.textAlign = 'left';
+      ctx.fillText(subLabel || 'ENGINE: THREE.JS r185 • NEXT.JS 16 • 60 FPS IPAD WEBKIT', pad + 16, 1080 - pad - 8);
+
+      ctx.textAlign = 'right';
+      ctx.fillText('LAT: 37.7749° N  •  LNG: 122.4194° W  •  ELEV: +14.2m', 1920 - pad - 12, 1080 - pad - 8);
+
+      ctx.restore();
+    }
+
+    // ── Dynamic Blueprint Grid with Perspective Drift ──────────────────────
+    function drawGrid(t, alpha = 0.2, speed = 1.0) {
+      ctx.save();
+      ctx.strokeStyle = `rgba(34, 112, 184, ${alpha})`;
+      ctx.lineWidth = 1;
+
+      const gridSize = 64;
+      const shiftX = (t * 18 * speed) % gridSize;
+      const shiftY = (t * 12 * speed) % gridSize;
+
+      for (let x = -gridSize; x <= 1920 + gridSize; x += gridSize) {
+        ctx.beginPath(); ctx.moveTo(x + shiftX, 0); ctx.lineTo(x + shiftX, 1080); ctx.stroke();
+      }
+      for (let y = -gridSize; y <= 1080 + gridSize; y += gridSize) {
+        ctx.beginPath(); ctx.moveTo(0, y + shiftY); ctx.lineTo(1920, y + shiftY); ctx.stroke();
+      }
+
+      // Intersection crosses
+      ctx.strokeStyle = `rgba(56, 189, 248, ${alpha * 2.2})`;
+      for (let x = gridSize; x < 1920; x += gridSize * 2) {
+        for (let y = gridSize; y < 1080; y += gridSize * 2) {
+          ctx.beginPath();
+          ctx.moveTo(x - 4, y); ctx.lineTo(x + 4, y);
+          ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 4);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
+    // ── MAIN FRAME RENDERER (0.0s to 60.0s) ────────────────────────────────
+    function renderFrame(t) {
+      ctx.clearRect(0, 0, 1920, 1080);
+
+      // ─────────────────────────────────────────────────────────────────────
+      // ACT 1: (0.0s – 12.6s) THE HOOK & SPATIAL TWIN GENESIS
+      // ─────────────────────────────────────────────────────────────────────
+      if (t < 12.6) {
+        // Deep Obsidian Space
+        const grad = ctx.createRadialGradient(960, 540, 60, 960, 540, 1200);
+        grad.addColorStop(0, '#0c243f');
+        grad.addColorStop(0.6, '#061322');
+        grad.addColorStop(1, '#02070d');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 1920, 1080);
+
+        drawGrid(t, 0.18, 1.2);
+        drawDynamicParticles(t);
+
+        // ── Phase 1A: (0.0s – 5.8s) The Spreadsheet Chaos ──
+        if (t < 5.8) {
+          const hookP = clamp(t / 0.8, 0, 1);
+          const hookAlpha = t < 4.8 ? easeOutCubic(hookP) : clamp((5.8 - t) / 1.0, 0, 1);
+
+          // Fast scrolling matrix glitch of spreadsheet rows in the background
+          ctx.save();
+          ctx.globalAlpha = 0.25 * hookAlpha;
+          ctx.fillStyle = '#ef4444';
+          ctx.font = '700 13px monospace';
+          for (let row = 0; row < 18; row++) {
+            const yPos = (row * 60 + t * 90) % 1080;
+            ctx.fillText(`ERR: UNIT_${100 + row}_PAYMENT_MISSING // UNLOGGED UTILITIES // DESYNC_ROW_${row}`, 80, yPos);
+            ctx.fillText(`WARN: LEASE_EXPIRED_NO_CAD // CSV_CORRUPTED_REVENUE`, 1100, yPos);
+          }
+          ctx.restore();
+
+          // Main Floating Problem Card (shaking with distress)
+          ctx.save();
+          ctx.globalAlpha = hookAlpha;
+          const shakeX = t > 3.0 ? (Math.random() - 0.5) * 6 : 0;
+          const shakeY = t > 3.0 ? (Math.random() - 0.5) * 6 : 0;
+          ctx.translate(960 + shakeX, 480 + shakeY);
+
+          // Kinetic bold headline
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '900 64px Sora';
+          ctx.textAlign = 'center';
+          ctx.shadowColor = '#ef4444';
+          ctx.shadowBlur = 35;
+          ctx.fillText('STILL MANAGING MULTI-MILLION', 0, -140);
+          ctx.fillText('DOLLAR PROPERTIES IN SPREADSHEETS?', 0, -65);
+
+          // Red Glitching Spreadsheet Box
+          const sW = 880;
+          const sH = 260;
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+          ctx.strokeStyle = t > 3.5 ? '#ef4444' : 'rgba(239, 68, 68, 0.5)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.roundRect(-sW / 2, 0, sW, sH, 16);
+          ctx.fill();
+          ctx.stroke();
+
+          // Header pill
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
+          ctx.beginPath(); ctx.roundRect(-sW / 2 + 20, 20, 240, 32, 8); ctx.fill();
+          ctx.fillStyle = '#f87171';
+          ctx.font = '800 12px Sora';
+          ctx.textAlign = 'center';
+          ctx.fillText('⚠ DISCONNECTED WORKFLOW', -sW / 2 + 140, 41);
+
+          // Error rows
+          const errs = [
+            'Unit 103: Overdue Rent (₱2,600) — Lost in email thread',
+            'Roof HVAC: Urgent water leak — No location coordinates',
+            'Unit 202: Vacant — Static PDF floorplan, no tenant visibility'
+          ];
+          ctx.textAlign = 'left';
+          errs.forEach((err, i) => {
+            const ey = 90 + i * 50;
+            ctx.fillStyle = '#f87171';
+            ctx.font = '700 15px Manrope';
+            ctx.fillText('✕ ' + err, -sW / 2 + 35, ey);
+          });
+
+          ctx.restore();
+        }
+
+        // ── Phase 1B: (5.8s – 12.6s) The Spatial Twin Solution & Mascot Genesis ──
+        if (t >= 5.5) {
+          const genP = clamp((t - 5.5) / 1.0, 0, 1);
+          const genEase = easeOutCubic(genP);
+
+          // Giant shockwave radial ring on transition hit
+          if (t >= 5.8 && t < 7.8) {
+            const shockR = (t - 5.8) * 650;
+            const shockA = Math.max(0, 1 - (t - 5.8) / 2.0);
+            ctx.save();
+            ctx.strokeStyle = `rgba(56, 189, 248, ${shockA * 0.8})`;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(960, 440, shockR, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          // Rotating radar telemetry
+          ctx.save();
+          ctx.translate(960, 410);
+          ctx.strokeStyle = 'rgba(56, 189, 248, 0.22)';
+          ctx.lineWidth = 1.5;
+          for (let r = 160; r <= 560; r += 100) {
+            ctx.beginPath();
+            ctx.arc(0, 0, r + Math.sin(t * 2) * 6, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          // Sweeping radar beam
+          ctx.rotate(t * 2.2);
+          const swGrad = ctx.createLinearGradient(0, 0, 500, 0);
+          swGrad.addColorStop(0, 'rgba(56, 189, 248, 0.4)');
+          swGrad.addColorStop(1, 'rgba(56, 189, 248, 0)');
+          ctx.fillStyle = swGrad;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.arc(0, 0, 500, 0, Math.PI / 3);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+
+          // Mascot Building Icon: Elastic spring entrance
+          if (images.icon) {
+            const mProgress = clamp((t - 5.8) / 1.2, 0, 1);
+            const mScale = easeOutBack(mProgress, 2.2);
+            const mY = lerp(120, 360, easeOutCubic(mProgress)) + Math.sin(t * 3.5) * 7;
+
+            ctx.save();
+            ctx.translate(960, mY);
+            ctx.scale(mScale, mScale);
+
+            // Neon ambient halo
+            ctx.shadowColor = '#38bdf8';
+            ctx.shadowBlur = 55;
+            const iW = 220;
+            const iH = 250;
+            ctx.drawImage(images.icon, -iW / 2, -iH / 2, iW, iH);
+            ctx.restore();
+          }
+
+          // Kinetic Brand Title (reveals at 7.5s)
+          if (t >= 7.5) {
+            const titleP = clamp((t - 7.5) / 0.8, 0, 1);
+            const titleEase = easeOutCubic(titleP);
+            const titleY = lerp(660, 580, titleEase);
+
+            ctx.save();
+            ctx.globalAlpha = titleEase;
+            ctx.textAlign = 'center';
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '900 68px Sora';
+            ctx.shadowColor = 'rgba(56, 189, 248, 0.8)';
+            ctx.shadowBlur = 40;
+            ctx.fillText('PROPERTY VISUALIZER', 960, titleY);
+
+            // Subtitle pill
+            const pillY = titleY + 62;
+            const pillW = 680;
+            const pillH = 44;
+            ctx.fillStyle = 'rgba(11, 56, 96, 0.9)';
+            ctx.strokeStyle = '#0284c7';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.roundRect(960 - pillW / 2, pillY - pillH / 2, pillW, pillH, 22);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#38bdf8';
+            ctx.font = '700 15px Manrope';
+            ctx.shadowBlur = 0;
+            ctx.fillText('THE SPATIAL DIGITAL TWIN FOR MODERN PROPERTY MANAGEMENT', 960, pillY + 5);
+
+            // Three Capability Badges popping in
+            if (t >= 9.2) {
+              const bP = clamp((t - 9.2) / 0.6, 0, 1);
+              ctx.globalAlpha = easeOutCubic(bP);
+              const bY = titleY + 130;
+              const badges = [
+                { label: '3D OBSIDIAN ENGINE', color: '#38bdf8' },
+                { label: '2D ARCHITECTURAL CAD', color: '#10b981' },
+                { label: 'EXECUTIVE COMMAND DECK', color: '#d98a53' }
+              ];
+              const totalW = 710;
+              const startX = 960 - totalW / 2;
+              badges.forEach((b, i) => {
+                const bx = startX + i * 240;
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+                ctx.strokeStyle = b.color;
+                ctx.lineWidth = 1.8;
+                ctx.beginPath();
+                ctx.roundRect(bx, bY - 20, 230, 40, 10);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '700 12px Manrope';
+                ctx.textAlign = 'center';
+                ctx.fillText(b.label, bx + 115, bY + 6);
+              });
+            }
+            ctx.restore();
+          }
+
+          // Camera Warp Zoom into Screen (12.0s – 12.6s)
+          if (t >= 12.0) {
+            const warpP = (t - 12.0) / 0.6;
+            ctx.fillStyle = `rgba(244, 245, 247, ${easeInCubic(warpP)})`;
+            ctx.fillRect(0, 0, 1920, 1080);
+          }
+        }
+
+        drawHUD(t, '01 // GENESIS & SPATIAL TWIN', 'SPATIAL OS v2.4 • REAL ARCHITECTURE IN MOTION');
+      }
+
+      // ─────────────────────────────────────────────────────────────────────
+      // ACT 2: (12.6s – 26.5s) EXECUTIVE DASHBOARD & LIVE SIMULATION
+      // ─────────────────────────────────────────────────────────────────────
+      else if (t < 26.5) {
+        // Clean Luminous Slate Background
+        ctx.fillStyle = '#f1f5f9';
+        ctx.fillRect(0, 0, 1920, 1080);
+
+        // Tech Grid
+        ctx.strokeStyle = 'rgba(11, 56, 96, 0.07)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < 1920; x += 48) {
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 1080); ctx.stroke();
+        }
+        for (let y = 0; y < 1080; y += 48) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(1920, y); ctx.stroke();
+        }
+
+        // Dynamic 3D Camera Pan & Zoom into Real Dashboard
+        if (images.dashboard) {
+          ctx.save();
+          const subT = t - 12.6;
+
+          // Camera trajectory:
+          // 12.6s – 17.5s: Wide view glides slowly right
+          // 17.5s – 22.0s: Zoom deep into Occupancy + Revenue metrics
+          // 22.0s – 26.5s: Pan across into Attention Needed Overdue alert
+          let camScale = 0.92;
+          let camX = 960;
+          let camY = 540;
+
+          if (t < 17.5) {
+            const p = clamp(subT / 1.0, 0, 1);
+            camScale = lerp(0.85, 0.94, easeOutCubic(p)) + subT * 0.005;
+            camX = 960 + Math.sin(subT * 0.5) * 25;
+            camY = 540 + Math.cos(subT * 0.5) * 10;
+          } else if (t < 22.5) {
+            const zoomP = clamp((t - 17.5) / 1.2, 0, 1);
+            camScale = lerp(0.94, 1.25, easeInOutCubic(zoomP));
+            camX = lerp(960, 720, easeInOutCubic(zoomP));
+            camY = lerp(540, 480, easeInOutCubic(zoomP));
+          } else {
+            const panP = clamp((t - 22.5) / 1.0, 0, 1);
+            camScale = lerp(1.25, 1.28, easeInOutCubic(panP));
+            camX = lerp(720, 640, easeInOutCubic(panP));
+            camY = lerp(480, 360, easeInOutCubic(panP));
+          }
+
+          ctx.translate(camX, camY);
+          ctx.scale(camScale, camScale);
+
+          // Device Shadow
+          ctx.shadowColor = 'rgba(15, 23, 42, 0.25)';
+          ctx.shadowBlur = 70;
+          ctx.shadowOffsetY = 35;
+
+          const dW = 1680;
+          const dH = 945;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.roundRect(-dW / 2, -dH / 2, dW, dH, 18);
+          ctx.fill();
+
+          ctx.shadowColor = 'transparent';
+          ctx.drawImage(images.dashboard, -dW / 2, -dH / 2, dW, dH);
+
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+
+          ctx.restore();
+        }
+
+        // ── Floating Parallax HUD Metric Highlights ──
+        // Metric Card 1: Active Tenancy Health (Pops at 14.0s)
+        if (t >= 14.0) {
+          const c1P = clamp((t - 14.0) / 0.6, 0, 1);
+          const c1Ease = easeOutBack(c1P);
+          const cX = 140;
+          const cY = 220 + Math.sin(t * 2) * 5;
+
+          ctx.save();
+          ctx.translate(cX, cY);
+          ctx.scale(c1Ease, c1Ease);
+
+          ctx.shadowColor = 'rgba(15, 23, 42, 0.18)';
+          ctx.shadowBlur = 30;
+          ctx.shadowOffsetY = 15;
+
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.roundRect(0, 0, 380, 210, 16);
+          ctx.fill();
+
+          ctx.strokeStyle = '#e2e8f0';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          ctx.fillStyle = '#64748b';
+          ctx.font = '700 11px Manrope';
+          ctx.letterSpacing = '0.08em';
+          ctx.fillText('PORTFOLIO TENANCY HEALTH', 24, 38);
+
+          // Occupancy dial count
+          const occVal = Math.round(lerp(0, 75, easeOutExpo(clamp((t - 14.3) / 1.5, 0, 1))));
+          ctx.fillStyle = '#0f172a';
+          ctx.font = '900 48px Sora';
+          ctx.fillText(`${occVal}%`, 24, 96);
+
+          ctx.fillStyle = '#334155';
+          ctx.font = '600 14px Manrope';
+          ctx.fillText('9 of 12 Units Active', 165, 88);
+
+          // Tenancy Triad Badges
+          const py = 135;
+          // Occupied
+          ctx.fillStyle = '#d98a53';
+          ctx.beginPath(); ctx.roundRect(24, py, 100, 30, 8); ctx.fill();
+          ctx.fillStyle = '#ffffff'; ctx.font = '700 11px Manrope'; ctx.fillText('6 OCCUPIED', 35, py + 19);
+
+          // Overdue
+          ctx.fillStyle = '#e05c5c';
+          ctx.beginPath(); ctx.roundRect(132, py, 100, 30, 8); ctx.fill();
+          ctx.fillStyle = '#ffffff'; ctx.fillText('1 OVERDUE', 145, py + 19);
+
+          // Vacant
+          ctx.fillStyle = '#6e8592';
+          ctx.beginPath(); ctx.roundRect(240, py, 100, 30, 8); ctx.fill();
+          ctx.fillStyle = '#ffffff'; ctx.fillText('2 VACANT', 255, py + 19);
+
+          ctx.restore();
+        }
+
+        // Metric Card 2: Revenue Counter (Pops at 17.0s)
+        if (t >= 17.0) {
+          const c2P = clamp((t - 17.0) / 0.6, 0, 1);
+          const c2Ease = easeOutBack(c2P);
+          const cX = 1400;
+          const cY = 240 + Math.cos(t * 2) * 5;
+
+          ctx.save();
+          ctx.translate(cX, cY);
+          ctx.scale(c2Ease, c2Ease);
+
+          ctx.shadowColor = 'rgba(15, 23, 42, 0.18)';
+          ctx.shadowBlur = 30;
+          ctx.shadowOffsetY = 15;
+
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.roundRect(0, 0, 380, 190, 16);
+          ctx.fill();
+
+          ctx.strokeStyle = '#0284c7';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          ctx.fillStyle = '#64748b';
+          ctx.font = '700 11px Manrope';
+          ctx.fillText('ESTIMATED MONTHLY CASH FLOW', 24, 38);
+
+          const revNum = Math.round(lerp(0, 34250, easeOutExpo(clamp((t - 17.2) / 1.5, 0, 1))));
+          ctx.fillStyle = '#0f172a';
+          ctx.font = '900 44px Sora';
+          ctx.fillText(`₱${revNum.toLocaleString()}`, 24, 96);
+
+          // Collection bar
+          ctx.fillStyle = '#e2e8f0';
+          ctx.beginPath(); ctx.roundRect(24, 122, 330, 10, 5); ctx.fill();
+
+          ctx.fillStyle = '#0284c7';
+          ctx.beginPath(); ctx.roundRect(24, 122, 330 * 0.92, 10, 5); ctx.fill();
+
+          ctx.fillStyle = '#10b981';
+          ctx.font = '700 12px Manrope';
+          ctx.fillText('✓ 92% Collection Rate On-Time', 24, 158);
+
+          ctx.restore();
+        }
+
+        // ── Phase 2B: Interactive Overdue Alert & Automated Action ──
+        if (t >= 20.0) {
+          const aP = clamp((t - 20.0) / 0.6, 0, 1);
+          const aEase = easeOutBack(aP);
+          const aY = 940;
+
+          ctx.save();
+          ctx.translate(960, aY);
+          ctx.scale(aEase, aEase);
+
+          // Pulsing warning shadow
+          const pulse = Math.sin(t * 8) * 0.3 + 0.7;
+          ctx.shadowColor = `rgba(224, 92, 92, ${pulse * 0.6})`;
+          ctx.shadowBlur = 35;
+
+          ctx.fillStyle = '#fee2e2';
+          ctx.strokeStyle = '#ef4444';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.roundRect(-360, -32, 720, 64, 14);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#b91c1c';
+          ctx.font = '800 15px Sora';
+          ctx.textAlign = 'left';
+          ctx.fillText('⚠ UNIT 103 (DAVID KIM) • ₱2,600 OVERDUE (12 DAYS)', -330, 6);
+
+          // Automated Action Pill
+          const isSent = t >= 23.5;
+          ctx.fillStyle = isSent ? '#10b981' : '#0284c7';
+          ctx.beginPath();
+          ctx.roundRect(160, -18, 175, 36, 18);
+          ctx.fill();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '700 12px Manrope';
+          ctx.textAlign = 'center';
+          ctx.fillText(isSent ? '✓ SMS NOTICE SENT' : '⚡ 1-TAP NOTICE', 247, 4);
+
+          ctx.restore();
+
+          // Simulated Interactive Cursor gliding to click button
+          if (t >= 21.5 && t < 25.5) {
+            const curP = clamp((t - 21.5) / 1.5, 0, 1);
+            const curX = lerp(800, 1210, easeOutCubic(curP));
+            const curY = lerp(700, 940, easeOutCubic(curP));
+            const isClicking = t >= 23.0 && t <= 23.6;
+            const clickProg = isClicking ? (t - 23.0) / 0.6 : 0;
+            drawCursor(curX, curY, isClicking, clickProg);
+          }
+        }
+
+        // Shutter wipe into Obsidian 3D (26.0s – 26.5s)
+        if (t >= 26.0) {
+          const shutP = (t - 26.0) / 0.5;
+          ctx.fillStyle = `rgba(11, 15, 19, ${easeInCubic(shutP)})`;
+          ctx.fillRect(0, 0, 1920, 1080);
+        }
+
+        drawHUD(t, '02 // EXECUTIVE COMMAND DECK', 'REAL-TIME AUTOMATION & AUDIT PROOF RENT ROLLS');
+      }
+
+      // ─────────────────────────────────────────────────────────────────────
+      // ACT 3: (26.5s – 40.5s) OBSIDIAN 3D ENGINE & SPATIAL ARCHITECTURE
+      // ─────────────────────────────────────────────────────────────────────
+      else if (t < 40.5) {
+        // Obsidian Darkroom (#0b0f13)
+        ctx.fillStyle = '#0b0f13';
+        ctx.fillRect(0, 0, 1920, 1080);
+
+        // Dynamic 3D Vanishing Perspective Grid
+        ctx.save();
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.3)';
+        ctx.lineWidth = 1.5;
+        const horizonY = 360;
+        const gridPanX = Math.sin((t - 26.5) * 0.4) * 80;
+
+        for (let x = -800; x <= 2720; x += 110) {
+          ctx.beginPath();
+          ctx.moveTo(x + gridPanX, 1080);
+          ctx.lineTo(960 + (x - 960) * 0.12, horizonY);
+          ctx.stroke();
+        }
+        for (let y = horizonY; y <= 1080; y += 32) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(1920, y);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        // 3D Model: Switch from orbit angle (26.5s–34.0s) to cinematic hero angle (34.0s–40.5s)
+        const isHeroAngle = t >= 34.0;
+        const currentModel = isHeroAngle ? (images.cinematic3d || images.spatial3d) : images.spatial3d;
+
+        if (currentModel) {
+          ctx.save();
+          const orbitP = (t - 26.5);
+          // Continuous orbit camera zoom & gentle tilt
+          const camScale = lerp(0.98, 1.10, (orbitP % 7.5) / 7.5);
+          const camX = 960 + Math.sin(orbitP * 0.6) * 35;
+          const camY = 540 + Math.cos(orbitP * 0.6) * 15;
+
+          ctx.translate(camX, camY);
+          ctx.scale(camScale, camScale);
+
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+          ctx.shadowBlur = 80;
+
+          const vW = 1680;
+          const vH = 945;
+          ctx.drawImage(currentModel, -vW / 2, -vH / 2, vW, vH);
+
+          // Specular cyber frame
+          ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(-vW / 2, -vH / 2, vW, vH);
+
+          ctx.restore();
+        }
+
+        // ── Phase 3A: Spatial Hologram Reticle Locks ──
+        if (t >= 28.0 && t < 34.0) {
+          // Reticle 1: Unit 101 Occupied (Terracotta)
+          if (t >= 28.0) {
+            const r1P = clamp((t - 28.0) / 0.5, 0, 1);
+            const rX = 720;
+            const rY = 590;
+
+            ctx.save();
+            ctx.globalAlpha = easeOutCubic(r1P);
+            ctx.strokeStyle = '#d98a53';
+            ctx.lineWidth = 2.5;
+            ctx.strokeRect(rX - 36, rY - 36, 72, 72);
+
+            ctx.beginPath();
+            ctx.moveTo(rX + 36, rY);
+            ctx.lineTo(rX + 110, rY - 45);
+            ctx.lineTo(rX + 280, rY - 45);
+            ctx.stroke();
+
+            ctx.fillStyle = 'rgba(11, 15, 19, 0.95)';
+            ctx.beginPath(); ctx.roundRect(rX + 110, rY - 72, 180, 52, 8); ctx.fill();
+            ctx.strokeStyle = '#d98a53'; ctx.stroke();
+
+            ctx.fillStyle = '#d98a53';
+            ctx.font = '800 13px Sora';
+            ctx.fillText('UNIT 101 • OCCUPIED', rX + 122, rY - 50);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '600 12px Manrope';
+            ctx.fillText('₱24,500/mo • John Doe', rX + 122, rY - 30);
+            ctx.restore();
+          }
+
+          // Reticle 2: Unit 103 Overdue (Pulsing Coral)
+          if (t >= 30.0) {
+            const r2P = clamp((t - 30.0) / 0.5, 0, 1);
+            const rX = 1170;
+            const rY = 600;
+
+            ctx.save();
+            ctx.globalAlpha = easeOutCubic(r2P);
+            const p = Math.sin(t * 8) * 0.3 + 0.7;
+
+            ctx.strokeStyle = `rgba(224, 92, 92, ${p})`;
+            ctx.lineWidth = 3;
+            ctx.strokeRect(rX - 36, rY - 36, 72, 72);
+
+            ctx.beginPath();
+            ctx.moveTo(rX + 36, rY);
+            ctx.lineTo(rX + 90, rY + 45);
+            ctx.lineTo(rX + 280, rY + 45);
+            ctx.stroke();
+
+            ctx.fillStyle = 'rgba(224, 92, 92, 0.2)';
+            ctx.beginPath(); ctx.roundRect(rX + 90, rY + 18, 190, 54, 8); ctx.fill();
+            ctx.strokeStyle = '#ef4444'; ctx.stroke();
+
+            ctx.fillStyle = '#ff6b6b';
+            ctx.font = '800 13px Sora';
+            ctx.fillText('⚠ UNIT 103 • OVERDUE', rX + 102, rY + 40);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '600 12px Manrope';
+            ctx.fillText('₱2,600 • 12 Days Late', rX + 102, rY + 60);
+            ctx.restore();
+          }
+
+          // Reticle 3: Unit 202 Vacant (Slate Blueprint)
+          if (t >= 32.0) {
+            const r3P = clamp((t - 32.0) / 0.5, 0, 1);
+            const rX = 960;
+            const rY = 460;
+
+            ctx.save();
+            ctx.globalAlpha = easeOutCubic(r3P);
+            ctx.strokeStyle = '#6e8592';
+            ctx.lineWidth = 2.5;
+            ctx.strokeRect(rX - 36, rY - 36, 72, 72);
+
+            ctx.beginPath();
+            ctx.moveTo(rX + 36, rY);
+            ctx.lineTo(rX + 90, rY - 35);
+            ctx.lineTo(rX + 270, rY - 35);
+            ctx.stroke();
+
+            ctx.fillStyle = 'rgba(11, 15, 19, 0.95)';
+            ctx.beginPath(); ctx.roundRect(rX + 90, rY - 60, 180, 50, 8); ctx.fill();
+            ctx.strokeStyle = '#6e8592'; ctx.stroke();
+
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '800 13px Sora';
+            ctx.fillText('UNIT 202 • VACANT', rX + 102, rY - 38);
+            ctx.fillStyle = '#38bdf8';
+            ctx.font = '600 12px Manrope';
+            ctx.fillText('Ready for Showing', rX + 102, rY - 20);
+            ctx.restore();
+          }
+        }
+
+        // ── Phase 3B: Roof Maintenance Ticket Pin (34.0s – 40.5s) ──
+        if (t >= 34.0) {
+          const pinP = clamp((t - 34.0) / 0.7, 0, 1);
+          const pinEase = easeOutElastic(pinP);
+          const pinX = 960;
+          const pinY = lerp(180, 360, pinEase);
+
+          ctx.save();
+          ctx.translate(pinX, pinY);
+
+          // Pulsing sonic radar wave
+          const waveR = ((t - 34.0) * 50) % 70;
+          const waveA = Math.max(0, 1 - waveR / 70);
+          ctx.strokeStyle = `rgba(59, 130, 246, ${waveA * 0.9})`;
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(0, 0, waveR + 20, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Pin marker
+          ctx.fillStyle = '#3b82f6';
+          ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '800 20px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('🔧', 0, 7);
+
+          // Maintenance Card
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
+          ctx.beginPath(); ctx.roundRect(32, -26, 280, 52, 10); ctx.fill();
+          ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2; ctx.stroke();
+
+          ctx.fillStyle = '#60a5fa'; ctx.font = '800 14px Sora'; ctx.textAlign = 'left';
+          ctx.fillText('ROOF HVAC UNIT #2', 46, -4);
+          ctx.fillStyle = '#cbd5e1'; ctx.font = '600 12px Manrope';
+          ctx.fillText('Ticket: Active • Team Alpha Dispatched', 46, 16);
+
+          ctx.restore();
+        }
+
+        // Cyan Laser Scan Transition Line (39.8s – 40.5s)
+        if (t >= 39.8) {
+          const scanX = lerp(0, 1920, (t - 39.8) / 0.7);
+          ctx.save();
+          ctx.strokeStyle = '#00ffff';
+          ctx.lineWidth = 6;
+          ctx.shadowColor = '#00ffff';
+          ctx.shadowBlur = 40;
+          ctx.beginPath();
+          ctx.moveTo(scanX, 0); ctx.lineTo(scanX, 1080); ctx.stroke();
+
+          ctx.fillStyle = 'rgba(0, 255, 255, 0.22)';
+          ctx.fillRect(0, 0, scanX, 1080);
+          ctx.restore();
+        }
+
+        drawHUD(t, '03 // OBSIDIAN 3D ENGINE', 'TENANCY TRIAD: TERRACOTTA (OCCUPIED) • CORAL (OVERDUE) • SLATE (VACANT)');
+      }
+
+      // ─────────────────────────────────────────────────────────────────────
+      // ACT 4: (40.5s – 47.5s) ARCHITECTURAL 2D CAD & IPAD 60 FPS
+      // ─────────────────────────────────────────────────────────────────────
+      else if (t < 47.5) {
+        // Deep Technical CAD Navy
+        ctx.fillStyle = '#061526';
+        ctx.fillRect(0, 0, 1920, 1080);
+
+        drawGrid(t, 0.25, 1.5);
+
+        // Split-screen Layout: Left CAD Blueprint, Right Property Directory
+        // 1. 2D Blueprint Floorplan
+        if (images.blueprint2d) {
+          ctx.save();
+          const bpP = clamp((t - 40.5) / 0.6, 0, 1);
+          const bpScale = lerp(0.85, 0.94, easeOutCubic(bpP));
+
+          ctx.translate(620, 540);
+          ctx.scale(bpScale, bpScale);
+
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+          ctx.shadowBlur = 50;
+
+          const bW = 1150;
+          const bH = 800;
+          ctx.drawImage(images.blueprint2d, -bW / 2, -bH / 2, bW, bH);
+
+          ctx.strokeStyle = '#0284c7';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(-bW / 2, -bH / 2, bW, bH);
+
+          ctx.restore();
+        }
+
+        // Animated CAD Dimension Lines (Draws in at 41.5s)
+        if (t >= 41.5) {
+          ctx.save();
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2;
+          ctx.fillStyle = '#38bdf8';
+          ctx.font = '700 13px Manrope';
+
+          // Horizontal Dimension line
+          const dimY = 340;
+          ctx.beginPath();
+          ctx.moveTo(520, dimY); ctx.lineTo(760, dimY);
+          ctx.moveTo(520, dimY - 8); ctx.lineTo(520, dimY + 8);
+          ctx.moveTo(760, dimY - 8); ctx.lineTo(760, dimY + 8);
+          ctx.stroke();
+          ctx.textAlign = 'center';
+          ctx.fillText('2.60 m (WIDTH)', 640, dimY - 12);
+
+          // Vertical Dimension line
+          const dimX = 480;
+          ctx.beginPath();
+          ctx.moveTo(dimX, 420); ctx.lineTo(dimX, 660);
+          ctx.moveTo(dimX - 8, 420); ctx.lineTo(dimX + 8, 420);
+          ctx.moveTo(dimX - 8, 660); ctx.lineTo(dimX + 8, 660);
+          ctx.stroke();
+
+          ctx.save();
+          ctx.translate(dimX - 14, 540);
+          ctx.rotate(-Math.PI / 2);
+          ctx.fillText('3.20 m (DEPTH)', 0, 0);
+          ctx.restore();
+
+          ctx.restore();
+        }
+
+        // 2. Property Directory Drawer sliding in from right (at 42.5s)
+        if (t >= 42.5 && images.propDetail) {
+          const drP = clamp((t - 42.5) / 0.7, 0, 1);
+          const drEase = easeOutCubic(drP);
+          const drX = lerp(2050, 1480, drEase);
+
+          ctx.save();
+          ctx.translate(drX, 540);
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+          ctx.shadowBlur = 50;
+
+          const pW = 740;
+          const pH = 820;
+          ctx.drawImage(images.propDetail, -pW / 2, -pH / 2, pW, pH);
+
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(-pW / 2, -pH / 2, pW, pH);
+          ctx.restore();
+        }
+
+        // iPad 60 FPS Performance Pill
+        if (t >= 43.5) {
+          ctx.save();
+          const pbY = 960;
+          ctx.fillStyle = 'rgba(11, 20, 32, 0.96)';
+          ctx.strokeStyle = '#10b981';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.roundRect(960 - 360, pbY - 26, 720, 52, 14);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#10b981';
+          ctx.font = '800 14px Sora';
+          ctx.textAlign = 'center';
+          ctx.fillText('⚡ 60 FPS IPAD WEBKIT ENGINE  •  ZERO GPU OVERHEAD  •  TOUCH PAN & ZOOM', 960, pbY + 6);
+          ctx.restore();
+        }
+
+        // Aperture iris close into Climax (47.0s – 47.5s)
+        if (t >= 47.0) {
+          const irisP = (t - 47.0) / 0.5;
+          ctx.fillStyle = `rgba(0, 0, 0, ${easeInCubic(irisP)})`;
+          ctx.fillRect(0, 0, 1920, 1080);
+        }
+
+        drawHUD(t, '04 // ARCHITECTURAL 2D CAD', 'TOUCH-READY BLUEPRINTS WITH MILLIMETER ACCURACY');
+      }
+
+      // ─────────────────────────────────────────────────────────────────────
+      // ACT 5: (47.5s – 60.0s) THE GRAND KINETIC FINALE & ANTHEM
+      // ─────────────────────────────────────────────────────────────────────
+      else {
+        // ── Phase 5A: Rapid-Fire Drum-Synced Typographic Cuts (47.5s – 53.5s) ──
+        if (t < 53.5) {
+          const beatT = t - 47.5;
+          const cutIdx = Math.floor(beatT / 1.5); // 0, 1, 2, 3
+
+          if (cutIdx === 0) {
+            // Cut 1: "EVERY TENANT."
+            ctx.fillStyle = '#061322';
+            ctx.fillRect(0, 0, 1920, 1080);
+            drawGrid(t, 0.4, 2.5);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '900 96px Sora';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = '#38bdf8';
+            ctx.shadowBlur = 60;
+            ctx.fillText('EVERY TENANT.', 960, 560);
+          } else if (cutIdx === 1) {
+            // Cut 2: "EVERY FLOOR."
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, 1920, 1080);
+            if (images.cinematic3d) {
+              ctx.save();
+              ctx.globalAlpha = 0.35;
+              ctx.drawImage(images.cinematic3d, 0, 0, 1920, 1080);
+              ctx.restore();
+            }
+
+            ctx.fillStyle = '#d98a53';
+            ctx.font = '900 96px Sora';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = '#d98a53';
+            ctx.shadowBlur = 60;
+            ctx.fillText('EVERY FLOOR.', 960, 560);
+          } else if (cutIdx === 2) {
+            // Cut 3: "EVERY DOLLAR."
+            ctx.fillStyle = '#051912';
+            ctx.fillRect(0, 0, 1920, 1080);
+            if (images.blueprint2d) {
+              ctx.save();
+              ctx.globalAlpha = 0.3;
+              ctx.drawImage(images.blueprint2d, 0, 0, 1920, 1080);
+              ctx.restore();
+            }
+
+            ctx.fillStyle = '#10b981';
+            ctx.font = '900 96px Sora';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = '#10b981';
+            ctx.shadowBlur = 60;
+            ctx.fillText('EVERY DOLLAR.', 960, 560);
+          } else {
+            // Cut 4: "SPATIAL TRUTH."
+            ctx.fillStyle = '#0a2340';
+            ctx.fillRect(0, 0, 1920, 1080);
+            drawGrid(t, 0.5, 3.0);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '900 92px Sora';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = '#38bdf8';
+            ctx.shadowBlur = 70;
+            ctx.fillText('SPATIAL TRUTH.', 960, 560);
+          }
+        }
+        // ── Phase 5B: Grand Brand Hero Lockup (53.5s – 60.0s) ──
+        else {
+          const lockT = (t - 53.5) / 5.0;
+
+          // Radial Cosmic Spotlight
+          const grad = ctx.createRadialGradient(960, 460, 60, 960, 540, 1200);
+          grad.addColorStop(0, '#0c2847');
+          grad.addColorStop(0.5, '#051322');
+          grad.addColorStop(1, '#02060a');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, 1920, 1080);
+
+          drawDynamicParticles(t);
+          drawGrid(t, 0.12, 0.6);
+
+          // Mascot Building Icon
+          const mEase = easeOutBack(clamp(lockT / 0.4, 0, 1));
+          if (images.icon) {
+            ctx.save();
+            ctx.translate(960, 350 + Math.sin(t * 3) * 5);
+            ctx.scale(mEase, mEase);
+            ctx.shadowColor = '#38bdf8';
+            ctx.shadowBlur = 60;
+            ctx.drawImage(images.icon, -115, -130, 230, 260);
+            ctx.restore();
+          }
+
+          // Official Brand Title
+          ctx.save();
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '900 70px Sora';
+          ctx.shadowColor = 'rgba(56, 189, 248, 0.8)';
+          ctx.shadowBlur = 40;
+          ctx.fillText('PROPERTY VISUALIZER', 960, 580);
+
+          ctx.fillStyle = '#10b981';
+          ctx.font = '700 20px Manrope';
+          ctx.letterSpacing = '0.18em';
+          ctx.shadowBlur = 0;
+          ctx.fillText('MANAGEMENT & TENANT HUB', 960, 626);
+
+          // CTA Pill Button
+          const ctaY = 700;
+          ctx.fillStyle = 'rgba(11, 56, 96, 0.95)';
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.roundRect(960 - 300, ctaY - 28, 600, 56, 28);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '700 19px Sora';
+          ctx.fillText('property-visualizer-b04f3.web.app', 960, ctaY + 7);
+
+          // Badges
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '600 13px Manrope';
+          ctx.fillText('Next.js 16  •  Three.js r185  •  Tailwind CSS  •  Firebase Cloud', 960, 795);
+
+          ctx.restore();
+
+          // Smooth Cinematic Fade to Black at 59.4s
+          if (t >= 59.4) {
+            const fOut = (t - 59.4) / 0.6;
+            ctx.fillStyle = `rgba(0, 0, 0, ${clamp(fOut, 0, 1)})`;
+            ctx.fillRect(0, 0, 1920, 1080);
+          }
+        }
+
+        drawHUD(t, '05 // TOTAL COMMAND • SHOWREEL', 'COMMAND YOUR PORTFOLIO IN 3D & 2D CAD');
+      }
+    }
+
+    // ── Self-Correcting Wall-Clock Frame Scheduler ─────────────────────────
+    window.startRecording = async function() {
+      await preloadAll();
+
+      const stream = canvas.captureStream(30);
+      const recorder = new MediaRecorder(stream, {
+        mimeType: 'video/webm;codecs=vp9',
+        videoBitsPerSecond: 25000000 // 25 Mbps crisp VP9
+      });
+      const chunks = [];
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+
+      const finishedPromise = new Promise(resolve => {
+        recorder.onstop = () => {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result.split(',')[1]);
+          reader.readAsDataURL(blob);
+        };
+      });
+
+      recorder.start();
+      console.log('MediaRecorder started for 60-second capture!');
+
+      const fps = 30;
+      const totalFrames = 1800; // 60.0s @ 30 FPS
+      const startTime = performance.now();
+      let frame = 0;
+
+      return new Promise((resolve) => {
+        function tick() {
+          const t = frame / fps;
+          renderFrame(t);
+          frame++;
+
+          if (frame >= totalFrames) {
+            setTimeout(async () => {
+              recorder.stop();
+              console.log('Recording finished at frame 1800 (60.0s)!');
+              const base64Video = await finishedPromise;
+              resolve(base64Video);
+            }, 120);
+            return;
+          }
+
+          const expectedTime = startTime + (frame * 1000 / fps);
+          const delay = Math.max(0, expectedTime - performance.now());
+          setTimeout(tick, delay);
+        }
+
+        tick();
+      });
+    };
+  </script>
+</body>
+</html>

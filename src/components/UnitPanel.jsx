@@ -363,7 +363,7 @@ export default function UnitPanel({ unit, onClose, isDrawerMode, onNavigateToMai
   const curStatus = STATUS_OPTIONS.find((s) => s.value === status) || STATUS_OPTIONS[0];
   const displayPhoto = photoPreview || tenantPhotoUrl;
 
-  const floatingClasses = "fixed sm:absolute inset-x-0 sm:inset-x-auto bottom-0 sm:bottom-8 sm:right-10 top-20 sm:top-8 z-[999] w-full sm:w-96 rounded-t-2xl sm:rounded-2xl border border-zinc-200/80 shadow-[0_2px_8px_0_rgba(0,0,0,0.12),_0_20px_48px_-8px_rgba(0,0,0,0.20)]";
+  const floatingClasses = "fixed sm:absolute inset-x-0 sm:inset-x-auto bottom-0 sm:bottom-20 sm:right-4 top-20 sm:top-20 z-[999] w-full sm:w-96 rounded-t-2xl sm:rounded-2xl border border-zinc-200/80 shadow-[0_2px_8px_0_rgba(0,0,0,0.12),_0_20px_48px_-8px_rgba(0,0,0,0.20)]";
   const drawerClasses = "fixed top-0 right-0 h-[100dvh] w-full sm:w-[420px] max-w-full shadow-[0_0_0_1px_rgba(0,0,0,0.06),_0_16px_48px_-4px_rgba(0,0,0,0.18)] z-[999] transition-transform border-l border-zinc-200/80";
 
   return (
@@ -385,7 +385,7 @@ export default function UnitPanel({ unit, onClose, isDrawerMode, onNavigateToMai
             </div>
           )}
           <div>
-            <div className="text-[16px] font-semibold leading-tight text-zinc-900 font-['Sora']">
+            <div className="text-[16px] font-semibold leading-tight text-zinc-900 font-['Sora'] tabular-nums">
               {unit.unit_label || "Unnamed Unit"}
             </div>
             <div className="flex items-center gap-1.5 mt-0.5">
@@ -400,7 +400,7 @@ export default function UnitPanel({ unit, onClose, isDrawerMode, onNavigateToMai
               type="button"
               onClick={() => setIsEditing(true)}
               aria-label="Edit unit details"
-              className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-[11px] font-semibold text-zinc-600 transition hover:bg-zinc-100 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2270b8]"
+              className="press-scale flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-[11px] font-semibold text-zinc-600 hover:bg-zinc-100 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2270b8]"
             >
               <Pencil size={12} />
               Edit
@@ -410,7 +410,7 @@ export default function UnitPanel({ unit, onClose, isDrawerMode, onNavigateToMai
               type="button"
               onClick={() => setIsEditing(false)}
               aria-label="Cancel editing unit details"
-              className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-[11px] font-semibold text-zinc-500 transition hover:bg-zinc-100 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2270b8]"
+              className="press-scale flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-[11px] font-semibold text-zinc-500 hover:bg-zinc-100 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2270b8]"
             >
               <X size={12} />
               Cancel
@@ -420,7 +420,7 @@ export default function UnitPanel({ unit, onClose, isDrawerMode, onNavigateToMai
             type="button"
             onClick={onClose}
             aria-label="Close unit details"
-            className="grid h-8 w-8 place-items-center rounded-full bg-zinc-100 text-zinc-500 transition hover:bg-zinc-200 cursor-pointer relative after:absolute after:-inset-2 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2270b8]"
+            className="press-scale grid h-8 w-8 place-items-center rounded-full bg-zinc-100 text-zinc-500 hover:bg-zinc-200 cursor-pointer relative after:absolute after:-inset-2 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2270b8]"
           >
             <X size={16} />
           </button>
@@ -438,13 +438,13 @@ export default function UnitPanel({ unit, onClose, isDrawerMode, onNavigateToMai
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-[10px] font-semibold tracking-[0.08em] text-[var(--color-blue-600)] uppercase">Monthly Rent</div>
-                  <div className="text-[22px] font-bold text-[var(--color-blue-700)] leading-tight">
+                  <div className="text-[22px] font-bold font-['Sora'] tabular-nums text-[var(--color-blue-700)] leading-tight">
                     ₱{(Number(unit.monthly_rent) || 0).toLocaleString()}
                   </div>
                 </div>
                 <div className="text-right flex flex-col items-end gap-1">
                   <div className="text-[10px] font-semibold tracking-[0.08em] text-[var(--color-blue-600)] uppercase">Due Day</div>
-                  <div className="text-[15px] font-semibold text-[var(--color-blue-700)]">
+                  <div className="text-[15px] font-semibold font-['Sora'] tabular-nums text-[var(--color-blue-700)]">
                     {unit.tenant?.rent_due_date ? `Day ${unit.tenant.rent_due_date}` : "—"}
                   </div>
                 </div>

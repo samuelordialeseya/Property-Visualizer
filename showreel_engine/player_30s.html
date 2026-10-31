@@ -1,0 +1,1745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Property Visualizer — 30s Motion Graphics Showreel (1920x1080)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Manrope:wght@400;500;600;700;800&family=Sora:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #05080c;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100vw;
+      height: 100vh;
+      font-family: 'Sora', sans-serif;
+    }
+    canvas {
+      width: 1920px;
+      height: 1080px;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="c" width="1920" height="1080"></canvas>
+
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d', { alpha: false });
+
+    // ── Official DESIGN.md Tokens ──────────────────────────────────────────
+    const COLORS = {
+      oceanAuthority: '#0b3860',
+      blueprintCobalt: '#2270b8',
+      midnightNavy: '#051b30',
+      iceTint: '#e1ebf4',
+      skyFocus: '#479de9',
+      brandEmerald: '#2d8a5e',
+      surfaceCanvas: '#f4f4f5',
+      surfaceCard: '#ffffff',
+      textCharcoal: '#18181b',
+      textMuted: '#71717a',
+      borderLight: '#e4e4e7',
+      obsidianDark: '#0b0f13',
+      obsidianSurface: '#141a21',
+      obsidianBorder: '#262f38',
+      occupied: '#d98a53',
+      occupiedTint: '#fef3c7',
+      occupiedText: '#92400e',
+      overdue: '#e05c5c',
+      overdueTint: '#fee2e2',
+      overdueText: '#991b1b',
+      vacant: '#6e8592',
+      vacantTint: '#f4f4f5',
+      vacantText: '#52525b'
+    };
+
+    // 128.0 BPM => 1 beat = 0.46875s, 1 bar = 1.875s, 16 bars = 30.000s
+    const BPM = 128.0;
+    const BEAT = 60.0 / BPM; // 0.46875s
+    const BAR = BEAT * 4;    // 1.875s
+
+    // ── Real Project Assets ────────────────────────────────────────────────
+    const assetSources = {
+      icon: 'assets/building-icon.png',
+      faviconHires: 'assets/favicon-hires.png',
+      logoHorizontal: 'assets/logo-horizontal.png',
+      logoFull: 'assets/logo-full.png',
+      monogram: 'assets/logo-monogram.png',
+      dashboard: 'assets/showreel_screen_01_dashboard.png',
+      propDetail: 'assets/showreel_screen_02_property_detail.png',
+      spatial3d: 'assets/showreel_screen_04_3d_spatial.png',
+      cinematic3d: 'assets/showreel_3d_angle_cinematic.png',
+      front3d: 'assets/showreel_3d_angle_front.png',
+      top3d: 'assets/showreel_3d_angle_top.png',
+      f1_3d: 'assets/showreel_screen_06_3d_f1.png',
+      blueprintF1: 'assets/showreel_screen_05_2d_blueprint_f1.png',
+      blueprintAll: 'assets/showreel_screen_05_2d_blueprint.png',
+      unitsDir: 'assets/showreel_screen_07_units_directory.png',
+      unitModal: 'assets/showreel_screen_08_unit_modal.png',
+      maintenance: 'assets/showreel_screen_09_maintenance_list.png',
+      staff: 'assets/showreel_screen_10_staff.png'
+    };
+
+    const images = {};
+
+    function loadImage(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = (e) => {
+          console.warn('Failed to load:', src, e);
+          resolve(null);
+        };
+        img.src = src;
+      });
+    }
+
+    // Flood-fill outer white/near-white background pixels so mascot & monogram have zero white fringe on dark canvases
+    function cleanOuterWhiteFringe(img) {
+      if (!img) return null;
+      const off = document.createElement('canvas');
+      off.width = img.width;
+      off.height = img.height;
+      const octx = off.getContext('2d');
+      octx.drawImage(img, 0, 0);
+      const imgData = octx.getImageData(0, 0, off.width, off.height);
+      const d = imgData.data;
+      const w = off.width, h = off.height;
+      const visited = new Uint8Array(w * h);
+      const queue = [];
+
+      const isBg = (idx) => {
+        const r = d[idx], g = d[idx + 1], b = d[idx + 2], a = d[idx + 3];
+        if (a < 25) return true;
+        return (r > 215 && g > 215 && b > 215 && Math.abs(r - g) < 18 && Math.abs(g - b) < 18);
+      };
+
+      // Seed from all 4 borders
+      for (let x = 0; x < w; x++) {
+        queue.push(x);
+        queue.push((h - 1) * w + x);
+      }
+      for (let y = 0; y < h; y++) {
+        queue.push(y * w);
+        queue.push(y * w + (w - 1));
+      }
+
+      while (queue.length > 0) {
+        const p = queue.pop();
+        if (visited[p]) continue;
+        visited[p] = 1;
+        const idx = p * 4;
+        if (isBg(idx)) {
+          d[idx + 3] = 0;
+          const x = p % w, y = (p / w) | 0;
+          if (x > 0 && !visited[p - 1]) queue.push(p - 1);
+          if (x < w - 1 && !visited[p + 1]) queue.push(p + 1);
+          if (y > 0 && !visited[p - w]) queue.push(p - w);
+          if (y < h - 1 && !visited[p + w]) queue.push(p + w);
+        }
+      }
+
+      // Soften 1px boundary alpha to eliminate any remaining halo
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const p = y * w + x;
+          const idx = p * 4;
+          if (d[idx + 3] > 0) {
+            const neighbors = [p - 1, p + 1, p - w, p + w];
+            let zeroNeighbors = 0;
+            for (const n of neighbors) {
+              if (d[n * 4 + 3] === 0) zeroNeighbors++;
+            }
+            if (zeroNeighbors > 0 && d[idx] > 185 && d[idx + 1] > 185 && d[idx + 2] > 185) {
+              d[idx + 3] = 0;
+            }
+          }
+        }
+      }
+
+      octx.putImageData(imgData, 0, 0);
+      return off;
+    }
+
+    let preloadDone = false;
+    async function preloadAll() {
+      if (preloadDone) return;
+      try {
+        await Promise.all([
+          document.fonts.load('800 72px Sora'),
+          document.fonts.load('700 48px Sora'),
+          document.fonts.load('800 18px Manrope'),
+          document.fonts.load('600 14px Manrope'),
+          document.fonts.load('700 14px "JetBrains Mono"')
+        ]);
+        await document.fonts.ready;
+      } catch (e) {
+        console.warn('Font preload notice:', e);
+      }
+      for (const [key, src] of Object.entries(assetSources)) {
+        images[key] = await loadImage(src);
+      }
+      images.iconClean = cleanOuterWhiteFringe(images.icon);
+      images.monogramClean = cleanOuterWhiteFringe(images.monogram);
+      preloadDone = true;
+      console.log('All 18 real Property Visualizer assets & fonts preloaded and alpha-cleaned!');
+    }
+
+    // ── Precision Easing Functions (Emil Kowalski / Apple Spring Vocabulary) ──
+    const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const invLerp = (a, b, v) => clamp((v - a) / (b - a), 0, 1);
+
+    function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+    function easeInCubic(t) { return t * t * t; }
+    function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+    function easeOutQuart(t) { return 1 - Math.pow(1 - t, 4); }
+    function easeOutExpo(t) { return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t); }
+    function easeOutBack(t, overshoot = 1.65) {
+      const c3 = overshoot + 1;
+      return 1 + c3 * Math.pow(t - 1, 3) + overshoot * Math.pow(t - 1, 2);
+    }
+    function easeOutSpring(t) {
+      if (t <= 0) return 0;
+      if (t >= 1) return 1;
+      return 1 - Math.exp(-6.5 * t) * Math.cos(10 * t);
+    }
+
+    // ── Deterministic Particle Field ───────────────────────────────────────
+    const particles = Array.from({ length: 90 }, (_, i) => ({
+      x: ((i * 137.5) % 1920),
+      y: ((i * 293.7) % 1080),
+      r: (i % 3) * 0.9 + 1.0,
+      vx: ((i % 7) - 3) * 14,
+      vy: -((i % 5) + 1) * 22,
+      alpha: ((i % 5) + 2) * 0.11,
+      color: i % 4 === 0 ? COLORS.occupied : (i % 3 === 0 ? COLORS.skyFocus : COLORS.blueprintCobalt)
+    }));
+
+    function drawParticles(t, opacityScale = 1.0) {
+      ctx.save();
+      for (const p of particles) {
+        const px = ((p.x + p.vx * t + Math.sin(t * 2 + p.r) * 18) % 1920 + 1920) % 1920;
+        const py = ((p.y + p.vy * t) % 1080 + 1080) % 1080;
+        ctx.globalAlpha = p.alpha * opacityScale;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(px, py, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // ── Architectural Drafting Grid ────────────────────────────────────────
+    function drawArchitecturalGrid(t, isLight = false, alpha = 0.15, speed = 1.0) {
+      ctx.save();
+      const gridSize = 60;
+      const ox = (t * 24 * speed) % gridSize;
+      const oy = (t * 16 * speed) % gridSize;
+
+      ctx.strokeStyle = isLight
+        ? `rgba(11, 56, 96, ${alpha * 0.55})`
+        : `rgba(34, 112, 184, ${alpha})`;
+      ctx.lineWidth = 1;
+
+      for (let x = -gridSize; x <= 1920 + gridSize; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x + ox, 0);
+        ctx.lineTo(x + ox, 1080);
+        ctx.stroke();
+      }
+      for (let y = -gridSize; y <= 1080 + gridSize; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y + oy);
+        ctx.lineTo(1920, y + oy);
+        ctx.stroke();
+      }
+
+      // Precision CAD crosshairs at 180px intervals
+      ctx.strokeStyle = isLight
+        ? `rgba(34, 112, 184, ${alpha * 1.2})`
+        : `rgba(71, 157, 233, ${alpha * 1.9})`;
+      ctx.lineWidth = 1.2;
+      for (let x = 120; x < 1920; x += 180) {
+        for (let y = 120; y < 1080; y += 180) {
+          ctx.beginPath();
+          ctx.moveTo(x - 5, y); ctx.lineTo(x + 5, y);
+          ctx.moveTo(x, y - 5); ctx.lineTo(x, y + 5);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
+    // ── Framed App Screen Helper with Specular Bezel & Shadow ──────────────
+    function drawFramedScreen(img, x, y, w, h, opts = {}) {
+      if (!img) return;
+      const {
+        radius = 18,
+        scale = 1,
+        rot = 0,
+        alpha = 1,
+        borderColor = 'rgba(255,255,255,0.85)',
+        shadowColor = 'rgba(5, 27, 48, 0.28)',
+        shadowBlur = 55,
+        shadowY = 26,
+        topBar = false,
+        highlightColor = null
+      } = opts;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(x, y);
+      if (rot !== 0) ctx.rotate(rot);
+      if (scale !== 1) ctx.scale(scale, scale);
+
+      // Outer ambient elevation shadow
+      ctx.shadowColor = shadowColor;
+      ctx.shadowBlur = shadowBlur;
+      ctx.shadowOffsetY = shadowY;
+
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.roundRect(-w / 2, -h / 2, w, h, radius);
+      ctx.fill();
+
+      // Clip inside rounded rect
+      ctx.shadowColor = 'transparent';
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(-w / 2, -h / 2, w, h, radius);
+      ctx.clip();
+
+      const headerOffset = topBar ? 32 : 0;
+      if (topBar) {
+        ctx.fillStyle = '#141a21';
+        ctx.fillRect(-w / 2, -h / 2, w, 32);
+        const dots = ['#e05c5c', '#d98a53', '#2d8a5e'];
+        dots.forEach((c, idx) => {
+          ctx.fillStyle = c;
+          ctx.beginPath();
+          ctx.arc(-w / 2 + 20 + idx * 16, -h / 2 + 16, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '600 11px "JetBrains Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('property-visualizer-b04f3.web.app', 0, -h / 2 + 20);
+      }
+
+      ctx.drawImage(img, -w / 2, -h / 2 + headerOffset, w, h - headerOffset);
+      ctx.restore();
+
+      // Border outline
+      ctx.strokeStyle = borderColor;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.roundRect(-w / 2, -h / 2, w, h, radius);
+      ctx.stroke();
+
+      if (highlightColor) {
+        ctx.strokeStyle = highlightColor;
+        ctx.lineWidth = 3.5;
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+
+    // ── Tactile Precision Cursor Helper ────────────────────────────────────
+    function drawPrecisionCursor(x, y, isPressed = false, rippleP = 0) {
+      ctx.save();
+      ctx.translate(x, y);
+
+      if (rippleP > 0 && rippleP < 1) {
+        const r = rippleP * 54;
+        ctx.strokeStyle = `rgba(34, 112, 184, ${1 - rippleP})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      const s = isPressed ? 0.86 : 1.0;
+      ctx.scale(s, s);
+      ctx.shadowColor = 'rgba(5, 27, 48, 0.45)';
+      ctx.shadowBlur = 14;
+      ctx.shadowOffsetY = 5;
+
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = COLORS.oceanAuthority;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, 26);
+      ctx.lineTo(7, 19.5);
+      ctx.lineTo(14, 29);
+      ctx.lineTo(18.5, 26);
+      ctx.lineTo(11.5, 16.5);
+      ctx.lineTo(19.5, 16.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // ── Broadcast Showreel HUD Frame & Audio Beat Visualizer ───────────────
+    function drawShowreelHUD(t, actNumber, actTitle, worldMode, isLight = false) {
+      ctx.save();
+      const pad = 36;
+      const bLen = 18;
+      const hudColor = isLight ? 'rgba(11, 56, 96, 0.55)' : 'rgba(71, 157, 233, 0.55)';
+      const textColor = isLight ? COLORS.oceanAuthority : '#cbd5e1';
+      const mutedColor = isLight ? '#64748b' : '#64748b';
+
+      ctx.strokeStyle = hudColor;
+      ctx.lineWidth = 1.8;
+
+      // 4 Corner Viewfinder Brackets
+      ctx.beginPath();
+      ctx.moveTo(pad, pad + bLen); ctx.lineTo(pad, pad); ctx.lineTo(pad + bLen, pad);
+      ctx.moveTo(1920 - pad - bLen, pad); ctx.lineTo(1920 - pad, pad); ctx.lineTo(1920 - pad, pad + bLen);
+      ctx.moveTo(pad, 1080 - pad - bLen); ctx.lineTo(pad, 1080 - pad); ctx.lineTo(pad + bLen, 1080 - pad);
+      ctx.moveTo(1920 - pad - bLen, 1080 - pad); ctx.lineTo(1920 - pad, 1080 - pad); ctx.lineTo(1920 - pad, 1080 - pad - bLen);
+      ctx.stroke();
+
+      // Top-Left: Live Brand Pill
+      ctx.fillStyle = isLight ? 'rgba(255, 255, 255, 0.90)' : 'rgba(20, 26, 33, 0.90)';
+      ctx.strokeStyle = isLight ? 'rgba(228, 228, 231, 0.9)' : 'rgba(38, 47, 56, 0.9)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(pad + 14, pad + 10, 340, 32, 8);
+      ctx.fill();
+      ctx.stroke();
+
+      // Pulsing beat indicator synced to 128 BPM
+      const beatPulse = 1 - ((t / BEAT) % 1);
+      ctx.fillStyle = isLight ? COLORS.blueprintCobalt : COLORS.skyFocus;
+      ctx.beginPath();
+      ctx.arc(pad + 30, pad + 26, 4 + beatPulse * 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = textColor;
+      ctx.font = '800 11px Manrope';
+      ctx.textAlign = 'left';
+      ctx.fillText(`PROPVIZ // ${actNumber} • ${actTitle}`, pad + 44, pad + 30);
+
+      // Top-Right: Dual-World Mode + Timecode + 128 BPM Equalizer Bars
+      ctx.fillStyle = isLight ? 'rgba(255, 255, 255, 0.90)' : 'rgba(20, 26, 33, 0.90)';
+      ctx.beginPath();
+      ctx.roundRect(1920 - pad - 390, pad + 10, 376, 32, 8);
+      ctx.fill();
+      ctx.stroke();
+
+      // Mini 8-bar audio spectrum synced to 128 BPM
+      for (let b = 0; b < 8; b++) {
+        const barH = 5 + Math.abs(Math.sin(t * 14 + b * 1.1)) * 14 * (0.5 + 0.5 * beatPulse);
+        ctx.fillStyle = b % 3 === 0 ? COLORS.occupied : (b % 2 === 0 ? COLORS.skyFocus : COLORS.brandEmerald);
+        ctx.fillRect(1920 - pad - 374 + b * 6, pad + 26 - barH / 2, 3.5, barH);
+      }
+
+      const barNum = Math.min(16, Math.floor(t / BAR) + 1);
+      const frameNum = Math.floor((t % 1) * 30).toString().padStart(2, '0');
+      const secStr = Math.floor(t).toString().padStart(2, '0');
+      ctx.fillStyle = textColor;
+      ctx.font = '700 11px "JetBrains Mono", monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(`${worldMode}  |  BAR ${String(barNum).padStart(2, '0')}/16  |  00:${secStr}:${frameNum}`, 1920 - pad - 28, pad + 30);
+
+      // Bottom Progress Scrubber Bar
+      const progW = 1920 - (pad + 14) * 2;
+      const progY = 1080 - pad - 14;
+      ctx.fillStyle = isLight ? 'rgba(11, 56, 96, 0.12)' : 'rgba(255, 255, 255, 0.10)';
+      ctx.fillRect(pad + 14, progY, progW, 3);
+
+      const fillW = clamp(t / 30.0, 0, 1) * progW;
+      const grad = ctx.createLinearGradient(pad + 14, 0, pad + 14 + progW, 0);
+      grad.addColorStop(0, COLORS.blueprintCobalt);
+      grad.addColorStop(0.5, COLORS.skyFocus);
+      grad.addColorStop(1, COLORS.occupied);
+      ctx.fillStyle = grad;
+      ctx.fillRect(pad + 14, progY, fillW, 3);
+
+      ctx.restore();
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // MASTER 30.0-SECOND (16-BAR @ 128 BPM) FRAME RENDERER
+    // ═════════════════════════════════════════════════════════════════════════
+    window.renderFrame = function(t) {
+      ctx.clearRect(0, 0, 1920, 1080);
+
+      // ───────────────────────────────────────────────────────────────────────
+      // ACT I: (0.00s – 5.625s | Bars 1–3)
+      // SPREADSHEET SHATTER -> MASCOT 3D GENESIS & DESIGN TOKENS
+      // VO: "Meet Property Visualizer. The spatial digital twin turning abstract rows into living architecture."
+      // ───────────────────────────────────────────────────────────────────────
+      if (t < 5.625) {
+        // Obsidian Midnight Blueprint Backdrop
+        const bgGrad = ctx.createRadialGradient(960, 480, 40, 960, 540, 1180);
+        bgGrad.addColorStop(0, '#0c2b4b');
+        bgGrad.addColorStop(0.55, '#071729');
+        bgGrad.addColorStop(1, '#040911');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, 1920, 1080);
+
+        drawArchitecturalGrid(t, false, 0.18, 1.3);
+        drawParticles(t, 0.9);
+
+        // ── Phase 1A (0.00s – 1.875s | Bar 1): Abstract Spreadsheet Rows Sliced & Shattered ──
+        if (t < 2.15) {
+          const shatterP = invLerp(1.40, 2.05, t);
+          const shatterEase = easeOutExpo(shatterP);
+          const alpha1A = 1 - invLerp(1.75, 2.10, t);
+
+          ctx.save();
+          ctx.globalAlpha = alpha1A;
+
+          // 8 Floating Spreadsheet Rows in 3D space that split apart at t=1.40s
+          const rows = [
+            { cell: 'ROW_01 // UNIT_101', tenant: 'ELENA ROSTOVA', status: 'SYNC_ERR_0x44', col: '#94a3b8' },
+            { cell: 'ROW_02 // UNIT_102', tenant: 'MARCUS STERLING', status: 'NO_FLOORPLAN', col: '#94a3b8' },
+            { cell: 'ROW_03 // UNIT_103', tenant: 'DAVID KIM — ₱2,600', status: '⚠ OVERDUE_LOST', col: '#e05c5c' },
+            { cell: 'ROW_04 // UNIT_201', tenant: 'SOPHIA LAURENT', status: 'HVAC_LEAK_UNMAPPED', col: '#d98a53' },
+            { cell: 'ROW_05 // UNIT_202', tenant: 'VACANT_INVENTORY', status: '#REF!_STATIC_PDF', col: '#6e8592' },
+            { cell: 'ROW_06 // UNIT_301', tenant: 'AMARA CHEN', status: 'UTILITY_SPLIT_ERR', col: '#e05c5c' }
+          ];
+
+          rows.forEach((r, idx) => {
+            const enterP = easeOutCubic(invLerp(idx * 0.06, idx * 0.06 + 0.35, t));
+            const baseY = 250 + idx * 86;
+            const isTopHalf = idx < 3;
+            const splitX = shatterEase * (isTopHalf ? -480 - idx * 70 : 480 + idx * 70);
+            const splitY = shatterEase * (isTopHalf ? -160 : 160);
+            const splitRot = shatterEase * (isTopHalf ? -0.18 : 0.18);
+            const jitterX = (t > 0.8 && t < 1.4) ? Math.sin(t * 75 + idx) * 4 : 0;
+
+            ctx.save();
+            ctx.translate(960 + splitX + jitterX, baseY + splitY);
+            ctx.rotate(splitRot);
+            ctx.scale(lerp(0.92, 1.0, enterP), lerp(0.92, 1.0, enterP));
+
+            ctx.fillStyle = idx === 2 ? 'rgba(224, 92, 92, 0.18)' : 'rgba(20, 26, 33, 0.88)';
+            ctx.strokeStyle = idx === 2 ? COLORS.overdue : 'rgba(71, 157, 233, 0.32)';
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.roundRect(-520, -32, 1040, 64, 12);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.font = '700 14px "JetBrains Mono", monospace';
+            ctx.fillStyle = '#e2e8f0';
+            ctx.textAlign = 'left';
+            ctx.fillText(r.cell, -490, 5);
+
+            ctx.font = '700 15px Manrope';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(r.tenant, -180, 5);
+
+            ctx.font = '800 13px "JetBrains Mono", monospace';
+            ctx.fillStyle = r.col;
+            ctx.textAlign = 'right';
+            ctx.fillText(r.status, 490, 5);
+
+            ctx.restore();
+          });
+
+          // Giant kinetic hook banner across center
+          const hookScale = easeOutBack(invLerp(0.05, 0.45, t));
+          ctx.save();
+          ctx.translate(960, 145 - shatterEase * 120);
+          ctx.scale(hookScale, hookScale);
+          ctx.textAlign = 'center';
+          ctx.font = '800 14px Manrope';
+          ctx.fillStyle = COLORS.overdue;
+          ctx.fillText('✕ THE OLD WAY: STATIC SPREADSHEETS & MENTAL FLOORPLANS', 0, -42);
+          ctx.font = '800 54px Sora';
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText('ABSTRACT ROWS BLIND YOUR PORTFOLIO.', 0, 12);
+          ctx.restore();
+
+          // Diagonal Cobalt Laser Slash at t = 1.35s -> 1.85s
+          if (t >= 1.32 && t <= 1.90) {
+            const slashP = invLerp(1.32, 1.65, t);
+            const slashFade = 1 - invLerp(1.65, 1.90, t);
+            ctx.save();
+            ctx.globalAlpha = slashFade;
+            ctx.strokeStyle = '#479de9';
+            ctx.shadowColor = '#479de9';
+            ctx.shadowBlur = 45;
+            ctx.lineWidth = 10;
+            ctx.beginPath();
+            ctx.moveTo(180, 960);
+            ctx.lineTo(lerp(180, 1740, slashP), lerp(960, 120, slashP));
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          ctx.restore();
+        }
+
+        // ── Phase 1B (1.875s – 5.625s | Bars 2–3): Mascot 3D Genesis & Brand Lockup ──
+        if (t >= 1.75) {
+          const genT = t - 1.875;
+
+          // Bar 2 Downbeat Shockwave Ring (1.875s)
+          if (genT >= 0 && genT < 1.5) {
+            const sP = genT / 1.5;
+            ctx.save();
+            ctx.strokeStyle = `rgba(71, 157, 233, ${(1 - sP) * 0.75})`;
+            ctx.lineWidth = 5 * (1 - sP);
+            ctx.beginPath();
+            ctx.arc(960, 355, easeOutCubic(sP) * 780, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          // Rotating CAD Compass Rings & Isometric Blueprint Base
+          const ringAlpha = easeOutCubic(invLerp(1.80, 2.30, t));
+          ctx.save();
+          ctx.globalAlpha = ringAlpha;
+          ctx.translate(960, 355);
+
+          for (let r = 155; r <= 435; r += 90) {
+            ctx.save();
+            ctx.rotate((r % 180 === 0 ? 1 : -1) * t * 0.35);
+            ctx.strokeStyle = r === 155 ? 'rgba(71, 157, 233, 0.45)' : 'rgba(34, 112, 184, 0.22)';
+            ctx.lineWidth = r === 155 ? 2 : 1.2;
+            ctx.setLineDash(r === 245 ? [10, 8] : []);
+            ctx.beginPath();
+            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          }
+          ctx.restore();
+
+          // Pixel Blueprint Icon (faviconHires) morphing into Clean 3D Mascot Building Icon (iconClean)
+          const mascotPop = easeOutBack(invLerp(1.875, 2.55, t), 1.85);
+          const blueprintMorph = invLerp(2.25, 2.85, t); // 0 = pixel blueprint, 1 = full mascot
+          const floatY = Math.sin(t * 3.5) * 6;
+
+          ctx.save();
+          ctx.translate(960, 345 + floatY);
+          ctx.scale(mascotPop, mascotPop);
+
+          // Glowing cyan pedestal shadow beneath building mascot
+          const pedGrad = ctx.createRadialGradient(0, 145, 5, 0, 145, 160);
+          pedGrad.addColorStop(0, 'rgba(71, 157, 233, 0.55)');
+          pedGrad.addColorStop(1, 'rgba(71, 157, 233, 0)');
+          ctx.fillStyle = pedGrad;
+          ctx.beginPath();
+          ctx.ellipse(0, 145, 155, 28, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          const iconW = 240;
+          const iconH = 272;
+
+          // Step 1: Pixel-Grid Blueprint Icon
+          if (blueprintMorph < 1 && images.faviconHires) {
+            ctx.save();
+            ctx.globalAlpha = 1 - blueprintMorph;
+            ctx.beginPath();
+            ctx.roundRect(-iconW / 2, -iconH / 2, iconW, iconH, 24);
+            ctx.clip();
+            ctx.drawImage(images.faviconHires, -iconW / 2, -iconH / 2, iconW, iconH);
+            ctx.restore();
+          }
+
+          // Step 2: Fringe-Free 3D Building Mascot Icon
+          const mascotImg = images.iconClean || images.icon;
+          if (mascotImg) {
+            ctx.save();
+            ctx.globalAlpha = clamp(blueprintMorph * 1.25, 0, 1);
+            ctx.shadowColor = 'rgba(71, 157, 233, 0.65)';
+            ctx.shadowBlur = 45;
+            ctx.drawImage(mascotImg, -iconW / 2, -iconH / 2, iconW, iconH);
+
+            // Animated highlight ring around the waving green tenant window (bottom-left window of mascot!)
+            if (t >= 2.75) {
+              const wavePulse = (Math.sin(t * 8) + 1) * 0.5;
+              ctx.shadowColor = 'transparent';
+              ctx.shadowBlur = 0;
+              ctx.strokeStyle = `rgba(45, 138, 94, ${0.5 + wavePulse * 0.5})`;
+              ctx.lineWidth = 2.5;
+              ctx.beginPath();
+              ctx.roundRect(-56, -12, 48, 52, 6);
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
+          ctx.restore();
+
+          // Orbiting Callout Badges around Mascot (Left: PV Monogram, Right: Living Digital Twin)
+          if (t >= 2.45) {
+            const sideP = easeOutBack(invLerp(2.45, 3.05, t));
+
+            // Left Floating Card: Official PV Monogram + Typography Token
+            ctx.save();
+            ctx.translate(lerp(560, 420, sideP), 330 + Math.sin(t * 2.5) * 5);
+            ctx.scale(sideP, sideP);
+            ctx.fillStyle = 'rgba(20, 26, 33, 0.92)';
+            ctx.strokeStyle = COLORS.blueprintCobalt;
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.roundRect(-165, -48, 330, 96, 16);
+            ctx.fill();
+            ctx.stroke();
+
+            const monoImg = images.monogramClean || images.monogram;
+            if (monoImg) {
+              ctx.drawImage(monoImg, -145, -30, 68, 60);
+            }
+            ctx.textAlign = 'left';
+            ctx.fillStyle = COLORS.skyFocus;
+            ctx.font = '800 11px Manrope';
+            ctx.fillText('BRAND ARCHITECTURE', -60, -14);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '800 18px Sora';
+            ctx.fillText('Sora 800 + Manrope', -60, 12);
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '600 12px "JetBrains Mono", monospace';
+            ctx.fillText('#0B3860 • #2270B8 • #2D8A5E', -60, 32);
+            ctx.restore();
+
+            // Right Floating Card: Tenancy Triad Spec
+            ctx.save();
+            ctx.translate(lerp(1360, 1500, sideP), 330 + Math.cos(t * 2.5) * 5);
+            ctx.scale(sideP, sideP);
+            ctx.fillStyle = 'rgba(20, 26, 33, 0.92)';
+            ctx.strokeStyle = COLORS.occupied;
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.roundRect(-165, -48, 330, 96, 16);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.textAlign = 'left';
+            ctx.fillStyle = COLORS.occupied;
+            ctx.font = '800 11px Manrope';
+            ctx.fillText('THE TENANCY TRIAD', -142, -16);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '800 17px Sora';
+            ctx.fillText('Spatial Status Engine', -142, 10);
+
+            const triad = [
+              { label: 'OCCUPIED', c: COLORS.occupied },
+              { label: 'OVERDUE', c: COLORS.overdue },
+              { label: 'VACANT', c: COLORS.vacant }
+            ];
+            triad.forEach((tr, idx) => {
+              const tx = -142 + idx * 98;
+              ctx.fillStyle = tr.c;
+              ctx.beginPath();
+              ctx.roundRect(tx, 20, 88, 18, 5);
+              ctx.fill();
+              ctx.fillStyle = '#ffffff';
+              ctx.font = '800 9px Manrope';
+              ctx.textAlign = 'center';
+              ctx.fillText(tr.label, tx + 44, 32);
+            });
+            ctx.restore();
+          }
+
+          // Hero Kinetic Title Lockup (2.15s+)
+          if (t >= 2.15) {
+            const titleP = easeOutCubic(invLerp(2.15, 2.75, t));
+            ctx.save();
+            ctx.globalAlpha = titleP;
+            ctx.translate(960, lerp(640, 585, titleP));
+
+            ctx.font = '800 70px Sora';
+            ctx.shadowColor = 'rgba(71, 157, 233, 0.55)';
+            ctx.shadowBlur = 35;
+            const wProp = ctx.measureText('PROPERTY').width;
+            const wViz = ctx.measureText('VISUALIZER').width;
+            const wordGap = 24;
+            const startX = -(wProp + wordGap + wViz) / 2;
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText('PROPERTY', startX, 0);
+            ctx.fillStyle = '#34d399';
+            ctx.fillText('VISUALIZER', startX + wProp + wordGap, 0);
+
+            ctx.textAlign = 'center';
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = 'rgba(11, 56, 96, 0.88)';
+            ctx.strokeStyle = COLORS.skyFocus;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.roundRect(-360, 24, 720, 42, 21);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#e1ebf4';
+            ctx.font = '800 14px Manrope';
+            ctx.fillText('THE SPATIAL 3D / 2D DIGITAL TWIN FOR MODERN PROPERTY MANAGEMENT', 0, 50);
+            ctx.restore();
+          }
+
+          // 3 Staggered Capability Badges at 3.60s, 3.75s, 3.90s
+          const caps = [
+            { t0: 3.60, title: '01 // DAYLIGHT LEDGER', sub: 'Mist #F4F4F5 • Executive Portfolio', col: COLORS.blueprintCobalt },
+            { t0: 3.75, title: '02 // OBSIDIAN 3D TWIN', sub: 'Three.js r185 • Low-Poly Spatial', col: COLORS.occupied },
+            { t0: 3.90, title: '03 // 2D CAD BLUEPRINT', sub: '60 FPS iPad WebKit • Zero Lag', col: COLORS.brandEmerald }
+          ];
+          caps.forEach((c, i) => {
+            if (t >= c.t0) {
+              const cp = easeOutBack(invLerp(c.t0, c.t0 + 0.45, t));
+              const cx = 440 + i * 520;
+              const cy = 748;
+              ctx.save();
+              ctx.translate(cx, cy);
+              ctx.scale(cp, cp);
+              ctx.fillStyle = 'rgba(20, 26, 33, 0.94)';
+              ctx.strokeStyle = c.col;
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.roundRect(-235, -36, 470, 72, 14);
+              ctx.fill();
+              ctx.stroke();
+
+              ctx.fillStyle = c.col;
+              ctx.font = '800 13px Sora';
+              ctx.textAlign = 'center';
+              ctx.fillText(c.title, 0, -6);
+              ctx.fillStyle = '#cbd5e1';
+              ctx.font = '600 13px Manrope';
+              ctx.fillText(c.sub, 0, 18);
+              ctx.restore();
+            }
+          });
+        }
+
+        // Diagonal Dual-World Wipe Transition into Act II (5.25s -> 5.625s)
+        if (t >= 5.25) {
+          const wp = easeInOutCubic(invLerp(5.25, 5.625, t));
+          ctx.save();
+          ctx.fillStyle = COLORS.surfaceCanvas;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(lerp(0, 2400, wp), 0);
+          ctx.lineTo(lerp(-480, 1920, wp), 1080);
+          ctx.lineTo(0, 1080);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+
+        drawShowreelHUD(t, 'ACT 01', 'BRAND & SPATIAL GENESIS', 'DUAL-WORLD OS', false);
+      }
+
+      // ───────────────────────────────────────────────────────────────────────
+      // ACT II: (5.625s – 11.25s | Bars 4–6)
+      // DAYLIGHT MIST WORLD (#F4F4F5) — EXECUTIVE DECK, UNITS DIRECTORY & INSPECTOR
+      // VO: "Your executive deck delivers instant clarity on portfolio health, occupancy, and cash flow."
+      // ───────────────────────────────────────────────────────────────────────
+      else if (t < 11.25) {
+        // Daylight Mist Canvas (#f4f4f5)
+        ctx.fillStyle = COLORS.surfaceCanvas;
+        ctx.fillRect(0, 0, 1920, 1080);
+
+        drawArchitecturalGrid(t, true, 0.14, 0.8);
+
+        // Top Brand Header Strip in Daylight Mode
+        ctx.save();
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = 'rgba(0,0,0,0.05)';
+        ctx.shadowBlur = 16;
+        ctx.beginPath();
+        ctx.roundRect(84, 88, 1752, 64, 14);
+        ctx.fill();
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+
+        if (images.logoHorizontal) {
+          ctx.drawImage(images.logoHorizontal, 108, 96, 195, 48);
+        }
+        ctx.fillStyle = COLORS.oceanAuthority;
+        ctx.font = '800 16px Sora';
+        ctx.textAlign = 'left';
+        ctx.fillText(
+          t < 8.4375
+            ? 'WORLD 01 // DAYLIGHT EXECUTIVE PORTFOLIO DECK'
+            : 'APEX TOWER & RESIDENCES // UNITS DIRECTORY & LIVE BILLING INSPECTOR',
+          335,
+          126
+        );
+
+        // Status Triad Legend Pills on Header Right
+        const pillData = [
+          { txt: '9 OCCUPIED', bg: COLORS.occupiedTint, fg: COLORS.occupiedText, dot: COLORS.occupied },
+          { txt: '1 OVERDUE (₱2,600)', bg: COLORS.overdueTint, fg: COLORS.overdueText, dot: COLORS.overdue },
+          { txt: '2 VACANT', bg: COLORS.vacantTint, fg: COLORS.vacantText, dot: COLORS.vacant }
+        ];
+        pillData.forEach((p, idx) => {
+          const px = 1320 + idx * 165;
+          ctx.fillStyle = p.bg;
+          ctx.beginPath();
+          ctx.roundRect(px, 104, 152, 32, 16);
+          ctx.fill();
+          ctx.fillStyle = p.dot;
+          ctx.beginPath();
+          ctx.arc(px + 18, 120, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = p.fg;
+          ctx.font = '800 11px Manrope';
+          ctx.textAlign = 'left';
+          ctx.fillText(p.txt, px + 30, 124);
+        });
+        ctx.restore();
+
+        // ── Phase 2A (5.625s – 8.4375s | Bars 4–5.5): Portfolio Overview + 3D Popout Metrics ──
+        if (t < 8.4375) {
+          const subT = t - 5.625;
+          const enterScale = lerp(0.91, 0.98, easeOutCubic(clamp(subT / 0.8, 0, 1)));
+          const driftX = Math.sin(subT * 1.1) * 14;
+
+          drawFramedScreen(images.dashboard, 960 + driftX, 565, 1380, 776, {
+            scale: enterScale,
+            radius: 20,
+            topBar: true,
+            borderColor: '#ffffff',
+            shadowColor: 'rgba(11, 56, 96, 0.18)',
+            shadowBlur: 65,
+            shadowY: 28
+          });
+
+          // Popout Card 1 (6.09s): Occupancy Health Card
+          if (t >= 6.09) {
+            const c1P = easeOutBack(invLerp(6.09, 6.55, t));
+            ctx.save();
+            ctx.translate(250, 390 + Math.sin(t * 3) * 5);
+            ctx.scale(c1P, c1P);
+
+            ctx.shadowColor = 'rgba(11, 56, 96, 0.22)';
+            ctx.shadowBlur = 40;
+            ctx.shadowOffsetY = 18;
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.roundRect(-190, -110, 380, 220, 20);
+            ctx.fill();
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetY = 0;
+
+            ctx.strokeStyle = COLORS.blueprintCobalt;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.textAlign = 'left';
+            ctx.fillStyle = COLORS.textMuted;
+            ctx.font = '800 11px Manrope';
+            ctx.fillText('PORTFOLIO OCCUPANCY RATE', -160, -70);
+
+            const occCount = Math.round(lerp(0, 75, easeOutExpo(invLerp(6.15, 7.10, t))));
+            ctx.fillStyle = COLORS.oceanAuthority;
+            ctx.font = '800 58px Sora';
+            ctx.fillText(`${occCount}%`, -160, -5);
+
+            ctx.fillStyle = COLORS.brandEmerald;
+            ctx.font = '700 14px Manrope';
+            ctx.fillText('9 of 12 Total Units Active', -15, -18);
+
+            // Segmented Tenancy Triad Bar
+            ctx.fillStyle = COLORS.occupied;
+            ctx.beginPath(); ctx.roundRect(-160, 24, 210, 14, 7); ctx.fill();
+            ctx.fillStyle = COLORS.overdue;
+            ctx.beginPath(); ctx.roundRect(56, 24, 42, 14, 7); ctx.fill();
+            ctx.fillStyle = COLORS.vacant;
+            ctx.beginPath(); ctx.roundRect(104, 24, 56, 14, 7); ctx.fill();
+
+            ctx.fillStyle = COLORS.textCharcoal;
+            ctx.font = '700 12px Manrope';
+            ctx.fillText('● 6 Occupied   ● 1 Overdue   ● 2 Vacant', -160, 68);
+            ctx.restore();
+          }
+
+          // Popout Card 2 (6.56s): Monthly Cash Flow Counter (₱34,250)
+          if (t >= 6.56) {
+            const c2P = easeOutBack(invLerp(6.56, 7.05, t));
+            ctx.save();
+            ctx.translate(1665, 650 + Math.cos(t * 3) * 5);
+            ctx.scale(c2P, c2P);
+
+            ctx.shadowColor = 'rgba(11, 56, 96, 0.22)';
+            ctx.shadowBlur = 40;
+            ctx.shadowOffsetY = 18;
+            ctx.fillStyle = COLORS.oceanAuthority;
+            ctx.beginPath();
+            ctx.roundRect(-195, -110, 390, 220, 20);
+            ctx.fill();
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetY = 0;
+
+            ctx.strokeStyle = COLORS.skyFocus;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.textAlign = 'left';
+            ctx.fillStyle = COLORS.iceTint;
+            ctx.font = '800 11px Manrope';
+            ctx.fillText('ESTIMATED MONTHLY CASH FLOW', -165, -70);
+
+            const revVal = Math.round(lerp(0, 34250, easeOutExpo(invLerp(6.60, 7.55, t))));
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '800 50px Sora';
+            ctx.fillText(`₱${revVal.toLocaleString()}`, -165, -8);
+
+            // Collection progress bar
+            ctx.fillStyle = 'rgba(255,255,255,0.18)';
+            ctx.beginPath(); ctx.roundRect(-165, 22, 330, 12, 6); ctx.fill();
+            const barFill = easeOutCubic(invLerp(6.65, 7.60, t)) * 330 * 0.92;
+            ctx.fillStyle = '#34d399';
+            ctx.beginPath(); ctx.roundRect(-165, 22, barFill, 12, 6); ctx.fill();
+
+            ctx.fillStyle = '#34d399';
+            ctx.font = '700 13px Manrope';
+            ctx.fillText('✓ 92% On-Time Collection (₱31,650)', -165, 66);
+            ctx.restore();
+          }
+        }
+
+        // ── Phase 2B (8.4375s – 11.25s | Bars 5.5–6): Property Detail + Units Directory + Unit 103 Inspector ──
+        else {
+          const whipP = easeOutCubic(invLerp(8.4375, 8.95, t));
+
+          // Left Background Layer: Property Detail Overview (Apex Tower)
+          drawFramedScreen(
+            images.propDetail,
+            lerp(960, 520, whipP),
+            560,
+            1060,
+            596,
+            {
+              scale: lerp(0.95, 0.84, whipP),
+              rot: lerp(0, -0.025, whipP),
+              alpha: 0.85,
+              topBar: true
+            }
+          );
+
+          // Center-Right Layer: Real Units Directory Table -> Morphs to Open Unit 103 Inspector Modal at t=10.15s
+          const showInspector = t >= 10.15;
+          const activeScreen = showInspector ? images.unitModal : images.unitsDir;
+
+          drawFramedScreen(
+            activeScreen,
+            lerp(1500, 1080, whipP),
+            575,
+            1320,
+            742,
+            {
+              scale: showInspector ? lerp(1.0, 1.03, easeOutBack(invLerp(10.15, 10.50, t))) : 1.0,
+              topBar: true,
+              highlightColor: showInspector ? COLORS.blueprintCobalt : null
+            }
+          );
+
+          // Urgent Coral Callout Banner for Unit 103 Overdue (Pops at 9.375s Bar 6 Downbeat)
+          if (t >= 9.375) {
+            const alertP = easeOutBack(invLerp(9.375, 9.75, t));
+            ctx.save();
+            ctx.translate(450, 885);
+            ctx.scale(alertP, alertP);
+
+            ctx.shadowColor = 'rgba(224, 92, 92, 0.35)';
+            ctx.shadowBlur = 35;
+            ctx.fillStyle = COLORS.overdueTint;
+            ctx.strokeStyle = COLORS.overdue;
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.roundRect(-340, -34, 680, 68, 16);
+            ctx.fill();
+            ctx.stroke();
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+
+            ctx.fillStyle = COLORS.overdueText;
+            ctx.font = '800 15px Sora';
+            ctx.textAlign = 'left';
+            ctx.fillText('⚠ UNIT 103 • DAVID KIM — ₱2,600 OVERDUE', -312, -2);
+            ctx.font = '600 12px Manrope';
+            ctx.fillText('Click row to open live statement ledger & record receipt', -312, 18);
+
+            // Status Pill inside banner
+            ctx.fillStyle = showInspector ? COLORS.brandEmerald : COLORS.oceanAuthority;
+            ctx.beginPath();
+            ctx.roundRect(145, -18, 175, 36, 18);
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '800 11px Manrope';
+            ctx.textAlign = 'center';
+            ctx.fillText(showInspector ? '✓ LEDGER OPENED' : 'INSPECT UNIT 103 →', 232, 4);
+            ctx.restore();
+          }
+
+          // Animated Precision Cursor clicking Unit 103 at t = 10.15s
+          if (t >= 9.45 && t <= 10.85) {
+            const moveP = easeOutCubic(invLerp(9.45, 10.10, t));
+            const cx = lerp(640, 910, moveP);
+            const cy = lerp(780, 515, moveP);
+            const isClick = t >= 10.10 && t <= 10.35;
+            const ripP = invLerp(10.12, 10.65, t);
+            drawPrecisionCursor(cx, cy, isClick, ripP);
+          }
+        }
+
+        drawShowreelHUD(t, 'ACT 02', 'EXECUTIVE COMMAND DECK', 'LIGHT MIST #F4F4F5', true);
+      }
+
+      // ───────────────────────────────────────────────────────────────────────
+      // ACT III: (11.25s – 16.875s | Bars 7–9)
+      // OBSIDIAN 3D DARKROOM (#0B0F13) — MULTI-ANGLE ORBIT, TENANCY TRIAD & ROOF MAINTENANCE
+      // VO: "Step into the Obsidian 3D darkroom. Orbit every unit in real time, coded by Tenancy Triad."
+      // ───────────────────────────────────────────────────────────────────────
+      else if (t < 16.875) {
+        // Obsidian Darkroom Canvas (#0b0f13)
+        ctx.fillStyle = COLORS.obsidianDark;
+        ctx.fillRect(0, 0, 1920, 1080);
+
+        // 3D Vanishing Horizon Perspective Grid
+        ctx.save();
+        const horizonY = 320;
+        const panShift = Math.sin((t - 11.25) * 0.8) * 90;
+        ctx.strokeStyle = 'rgba(71, 157, 233, 0.25)';
+        ctx.lineWidth = 1.4;
+        for (let x = -700; x <= 2620; x += 120) {
+          ctx.beginPath();
+          ctx.moveTo(x + panShift, 1080);
+          ctx.lineTo(960 + (x - 960) * 0.14, horizonY);
+          ctx.stroke();
+        }
+        for (let y = horizonY; y <= 1080; y += 38) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(1920, y);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        // Multi-Angle 3D Showcase:
+        // 11.25s – 13.40s: Isometric 3D View (spatial3d)
+        // 13.40s – 15.10s: Cinematic Low-Angle Hero View (cinematic3d)
+        // 15.10s – 16.875s: Floor 1 Isolated / Front View + Live Maintenance Overlay
+        let active3D = images.spatial3d;
+        let angleBadge = 'CAMERA: ISOMETRIC ORBIT (THREE.JS r185)';
+        if (t >= 13.40 && t < 15.10) {
+          active3D = images.cinematic3d || images.spatial3d;
+          angleBadge = 'CAMERA: LOW-ANGLE ARCHITECTURAL HERO';
+        } else if (t >= 15.10) {
+          active3D = images.f1_3d || images.spatial3d;
+          angleBadge = 'CAMERA: FLOOR ISOLATOR & ROOF TELEMETRY';
+        }
+
+        const localT = t - 11.25;
+        const camZoom = lerp(0.96, 1.05, (localT % 2.2) / 2.2);
+        drawFramedScreen(active3D, 960, 540, 1620, 911, {
+          scale: camZoom,
+          radius: 22,
+          borderColor: 'rgba(71, 157, 233, 0.45)',
+          shadowColor: 'rgba(0, 0, 0, 0.85)',
+          shadowBlur: 75,
+          shadowY: 30
+        });
+
+        // Brief Dual-World Bifurcation Split Flash on Entrance (11.25s – 12.10s)
+        if (t < 12.10) {
+          const splitOut = easeInCubic(invLerp(11.25, 12.10, t));
+          const splitX = lerp(960, -120, splitOut);
+          if (splitX > 0) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(0, 0, splitX, 1080);
+            ctx.clip();
+            ctx.fillStyle = COLORS.surfaceCanvas;
+            ctx.fillRect(0, 0, 1920, 1080);
+            if (images.dashboard) {
+              ctx.drawImage(images.dashboard, 120, 90, 1680, 900);
+            }
+            ctx.restore();
+
+            // Glowing vertical divider line
+            ctx.save();
+            ctx.strokeStyle = COLORS.skyFocus;
+            ctx.shadowColor = COLORS.skyFocus;
+            ctx.shadowBlur = 30;
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(splitX, 0);
+            ctx.lineTo(splitX, 1080);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+
+        // Top Camera Telemetry Pill
+        ctx.save();
+        ctx.fillStyle = 'rgba(20, 26, 33, 0.92)';
+        ctx.strokeStyle = COLORS.skyFocus;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.roundRect(960 - 250, 96, 500, 38, 19);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '800 12px "JetBrains Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(angleBadge, 960, 120);
+        ctx.restore();
+
+        // ── 3 Synchronized Tenancy Triad Hologram Reticle Locks (12.65s, 13.59s, 14.53s) ──
+        const reticles = [
+          {
+            t0: 12.65,
+            x: 685, y: 585,
+            boxX: 210, boxY: 455,
+            color: COLORS.occupied,
+            tag: 'OCCUPIED • TERRACOTTA #D98A53',
+            title: 'UNIT 101 — Elena Rostova',
+            meta: '₱2,450 / mo • Lease Active • Floor 1'
+          },
+          {
+            t0: 13.59,
+            x: 1155, y: 615,
+            boxX: 1360, boxY: 620,
+            color: COLORS.overdue,
+            tag: '⚠ OVERDUE • CRIMSON CORAL #E05C5C',
+            title: 'UNIT 103 — David Kim',
+            meta: '₱2,600 / mo • Action Required • Floor 1'
+          },
+          {
+            t0: 14.53,
+            x: 910, y: 410,
+            boxX: 210, boxY: 255,
+            color: COLORS.vacant,
+            tag: 'VACANT • MUTED SLATE #6E8592',
+            title: 'UNIT 202 — Ready for Lease',
+            meta: '₱2,950 / mo • 2.6m × 3.2m • Floor 2'
+          }
+        ];
+
+        reticles.forEach((ret) => {
+          if (t >= ret.t0 && t < 15.55) {
+            const rp = easeOutBack(invLerp(ret.t0, ret.t0 + 0.38, t));
+            ctx.save();
+            ctx.globalAlpha = clamp(rp, 0, 1);
+
+            // Target reticle box on 3D unit
+            ctx.strokeStyle = ret.color;
+            ctx.lineWidth = 2.8;
+            const rSize = lerp(95, 58, clamp(rp, 0, 1));
+            ctx.strokeRect(ret.x - rSize / 2, ret.y - rSize / 2, rSize, rSize);
+
+            // Leader line from 3D unit to HUD callout card
+            ctx.beginPath();
+            ctx.moveTo(ret.x, ret.y);
+            ctx.lineTo(ret.boxX + 185, ret.boxY + 44);
+            ctx.stroke();
+
+            // Callout HUD Card
+            ctx.fillStyle = 'rgba(20, 26, 33, 0.95)';
+            ctx.beginPath();
+            ctx.roundRect(ret.boxX, ret.boxY, 370, 92, 14);
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.textAlign = 'left';
+            ctx.fillStyle = ret.color;
+            ctx.font = '800 10px Manrope';
+            ctx.fillText(ret.tag, ret.boxX + 20, ret.boxY + 26);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '800 17px Sora';
+            ctx.fillText(ret.title, ret.boxX + 20, ret.boxY + 52);
+
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '600 12px Manrope';
+            ctx.fillText(ret.meta, ret.boxX + 20, ret.boxY + 74);
+            ctx.restore();
+          }
+        });
+
+        // ── Roof Maintenance Pin & Real Maintenance Screen Callout (15.468s – 16.875s) ──
+        if (t >= 15.468) {
+          const mp = easeOutBack(invLerp(15.468, 15.88, t));
+
+          // Pulsing roof wrench target on Unit 201
+          ctx.save();
+          ctx.translate(680, 340);
+          const wave = ((t - 15.468) * 90) % 75;
+          ctx.strokeStyle = `rgba(217, 138, 83, ${1 - wave / 75})`;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(0, 0, 24 + wave, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.fillStyle = COLORS.occupied;
+          ctx.beginPath();
+          ctx.arc(0, 0, 22, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '800 14px Sora';
+          ctx.textAlign = 'center';
+          ctx.fillText('🔧', 0, 5);
+          ctx.restore();
+
+          // Real Maintenance Screen Floating Inset on Right
+          drawFramedScreen(images.maintenance, 1340, 560, 880, 495, {
+            scale: mp,
+            radius: 16,
+            topBar: true,
+            borderColor: COLORS.occupied,
+            highlightColor: COLORS.occupied
+          });
+
+          ctx.save();
+          ctx.globalAlpha = clamp(mp, 0, 1);
+          ctx.fillStyle = COLORS.occupied;
+          ctx.beginPath();
+          ctx.roundRect(900, 265, 460, 38, 10);
+          ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '800 13px Sora';
+          ctx.textAlign = 'center';
+          ctx.fillText('🔧 UNIT 201 ROOF PIN → HVAC THERMOSTAT TICKET', 1130, 289);
+          ctx.restore();
+        }
+
+        // Cyan Laser CAD Scan Wipe at end of Act III (16.50s -> 16.875s)
+        if (t >= 16.50) {
+          const scanP = invLerp(16.50, 16.875, t);
+          const scanX = lerp(0, 1920, scanP);
+          ctx.save();
+          ctx.strokeStyle = '#38bdf8';
+          ctx.shadowColor = '#38bdf8';
+          ctx.shadowBlur = 45;
+          ctx.lineWidth = 8;
+          ctx.beginPath();
+          ctx.moveTo(scanX, 0);
+          ctx.lineTo(scanX, 1080);
+          ctx.stroke();
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.18)';
+          ctx.fillRect(0, 0, scanX, 1080);
+          ctx.restore();
+        }
+
+        drawShowreelHUD(t, 'ACT 03', 'OBSIDIAN 3D SPATIAL ENGINE', 'OBSIDIAN #0B0F13', false);
+      }
+
+      // ───────────────────────────────────────────────────────────────────────
+      // ACT IV: (16.875s – 22.50s | Bars 10–12)
+      // 2D ARCHITECTURAL CAD BLUEPRINT, 60FPS iPAD WEBKIT & 4-SCREEN BENTO GRID
+      // VO: "Slide into 2D CAD blueprints with buttery sixty frames per second on your iPad."
+      // ───────────────────────────────────────────────────────────────────────
+      else if (t < 22.50) {
+        ctx.fillStyle = '#07111d';
+        ctx.fillRect(0, 0, 1920, 1080);
+        drawArchitecturalGrid(t, false, 0.24, 1.4);
+
+        // ── Phase 4A (16.875s – 20.625s | Bars 10–11): iPad Pro 60FPS 2D CAD Blueprint Showcase ──
+        if (t < 20.625) {
+          const padP = easeOutBack(invLerp(16.875, 17.45, t), 1.25);
+
+          // Sleek iPad Pro Hardware Frame in Center-Left
+          ctx.save();
+          ctx.translate(780, 535);
+          ctx.scale(padP, padP);
+
+          // Outer aluminum/space-gray iPad bezel
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+          ctx.shadowBlur = 65;
+          ctx.shadowOffsetY = 28;
+          ctx.fillStyle = '#1e293b';
+          ctx.strokeStyle = '#475569';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.roundRect(-640, -385, 1280, 770, 38);
+          ctx.fill();
+          ctx.stroke();
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetY = 0;
+
+          // Inner iPad black bezel
+          ctx.fillStyle = '#05080c';
+          ctx.beginPath();
+          ctx.roundRect(-616, -361, 1232, 722, 24);
+          ctx.fill();
+
+          // Real Floor 1 2D Architectural Blueprint inside iPad screen
+          const bpImg = images.blueprintF1 || images.blueprintAll;
+          if (bpImg) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.roundRect(-608, -353, 1216, 706, 18);
+            ctx.clip();
+            const zoom2D = lerp(1.0, 1.12, easeInOutCubic(invLerp(17.8, 19.8, t)));
+            ctx.scale(zoom2D, zoom2D);
+            ctx.drawImage(bpImg, -608, -353, 1216, 706);
+            ctx.restore();
+          }
+
+          // Animated CAD Dimension Calipers over the iPad screen (18.0s+)
+          if (t >= 18.0) {
+            const calP = easeOutCubic(invLerp(18.0, 18.6, t));
+            ctx.save();
+            ctx.strokeStyle = '#38bdf8';
+            ctx.fillStyle = '#38bdf8';
+            ctx.lineWidth = 2;
+            ctx.font = '700 12px "JetBrains Mono", monospace';
+            ctx.textAlign = 'center';
+
+            const lineW = 360 * calP;
+            ctx.beginPath();
+            ctx.moveTo(-180, -175);
+            ctx.lineTo(-180 + lineW, -175);
+            ctx.moveTo(-180, -183); ctx.lineTo(-180, -167);
+            ctx.moveTo(-180 + lineW, -183); ctx.lineTo(-180 + lineW, -167);
+            ctx.stroke();
+            if (calP > 0.5) {
+              ctx.fillText('CAD SPAN: 7.80m  |  1m = 48px SVG GRID', 0, -188);
+            }
+            ctx.restore();
+          }
+
+          ctx.restore();
+
+          // Right Side Telemetry Column: iPad 60FPS Specs + Real Staff & Payroll Card
+          const specP = easeOutCubic(invLerp(17.30, 17.90, t));
+          ctx.save();
+          ctx.globalAlpha = specP;
+          ctx.translate(1640, 310);
+
+          ctx.fillStyle = 'rgba(20, 26, 33, 0.95)';
+          ctx.strokeStyle = COLORS.brandEmerald;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.roundRect(-210, -135, 420, 270, 20);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.textAlign = 'left';
+          ctx.fillStyle = '#34d399';
+          ctx.font = '800 12px Manrope';
+          ctx.fillText('⚡ FIELD-READY IPAD WEBKIT ENGINE', -180, -92);
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '800 44px Sora';
+          ctx.fillText('60 FPS LOCK', -180, -38);
+
+          const specs = [
+            '✓ Zero GPU Overhead 2D Blueprint Mode',
+            '✓ No-Blur Compositing Mandate (DESIGN.md)',
+            '✓ 42px Minimum Touch Hit Targets',
+            '✓ Instant WebGL 2 Fallback Guarantee'
+          ];
+          ctx.font = '600 14px Manrope';
+          ctx.fillStyle = '#cbd5e1';
+          specs.forEach((s, i) => {
+            ctx.fillText(s, -180, 6 + i * 28);
+          });
+          ctx.restore();
+
+          // Bottom-Right Floating Preview: Real Staff & Payroll Screen
+          if (t >= 18.25) {
+            const stP = easeOutBack(invLerp(18.25, 18.80, t));
+            drawFramedScreen(images.staff, 1640, 685, 420, 250, {
+              scale: stP,
+              radius: 16,
+              borderColor: COLORS.blueprintCobalt
+            });
+          }
+        }
+
+        // ── Phase 4B (20.625s – 22.50s | Bar 12): 4-Beat Full-Ecosystem Bento Grid Snap ──
+        else {
+          const bentoCells = [
+            { t0: 20.62500, x: 515,  y: 325, img: images.front3d,     tag: '01 // 3D SPATIAL ELEVATION', col: COLORS.skyFocus },
+            { t0: 21.09375, x: 1405, y: 325, img: images.blueprintF1, tag: '02 // 2D ARCHITECTURAL CAD', col: COLORS.brandEmerald },
+            { t0: 21.56250, x: 515,  y: 755, img: images.maintenance, tag: '03 // MAINTENANCE TICKETING', col: COLORS.occupied },
+            { t0: 22.03125, x: 1405, y: 755, img: images.staff,       tag: '04 // STAFF & PAYROLL LEDGER', col: COLORS.blueprintCobalt }
+          ];
+
+          bentoCells.forEach((cell) => {
+            if (t >= cell.t0) {
+              const cp = easeOutBack(invLerp(cell.t0, cell.t0 + 0.32, t), 1.4);
+              drawFramedScreen(cell.img, cell.x, cell.y, 830, 385, {
+                scale: cp,
+                radius: 16,
+                borderColor: cell.col,
+                highlightColor: cell.col
+              });
+
+              ctx.save();
+              ctx.translate(cell.x - 395, cell.y - 172);
+              ctx.scale(cp, cp);
+              ctx.fillStyle = 'rgba(11, 15, 19, 0.92)';
+              ctx.strokeStyle = cell.col;
+              ctx.lineWidth = 1.5;
+              ctx.beginPath();
+              ctx.roundRect(0, 0, 285, 34, 8);
+              ctx.fill();
+              ctx.stroke();
+              ctx.fillStyle = '#ffffff';
+              ctx.font = '800 11px Sora';
+              ctx.textAlign = 'left';
+              ctx.fillText(cell.tag, 14, 21);
+              ctx.restore();
+            }
+          });
+        }
+
+        drawShowreelHUD(t, 'ACT 04', '2D CAD & FULL ECOSYSTEM BENTO', '60 FPS IPAD PWA', false);
+      }
+
+      // ───────────────────────────────────────────────────────────────────────
+      // ACT V: (22.50s – 30.00s | Bars 13–16)
+      // BEAT-SYNCED KINETIC SHOWREEL MONTAGE & GRAND BRAND HERO FINALE
+      // VO 5: "Every tenant. Every floor. Every single dollar. Exactly where it belongs."
+      // VO 6: "Command your portfolio with Property Visualizer today."
+      // ───────────────────────────────────────────────────────────────────────
+      else {
+        // ── Phase 5A (22.50s – 26.25s | Bars 13–14): 6 Rapid-Fire Beat-Locked Showreel Cuts ──
+        if (t < 26.25) {
+          // Cut 1 (22.500s – 23.4375s): "EVERY TENANT." over Units Directory + Terracotta Accent
+          if (t < 23.4375) {
+            const p = invLerp(22.50, 23.4375, t);
+            ctx.fillStyle = COLORS.oceanAuthority;
+            ctx.fillRect(0, 0, 1920, 1080);
+
+            drawFramedScreen(images.unitsDir, 960, 540, 1740, 978, {
+              scale: lerp(1.08, 1.18, p),
+              alpha: 0.28,
+              borderColor: 'transparent'
+            });
+
+            const pop = easeOutBack(invLerp(22.50, 22.78, t), 1.6);
+            ctx.save();
+            ctx.translate(960, 540);
+            ctx.scale(pop, pop);
+            ctx.fillStyle = COLORS.occupied;
+            ctx.beginPath();
+            ctx.roundRect(-240, -155, 480, 44, 22);
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '800 14px Manrope';
+            ctx.textAlign = 'center';
+            ctx.fillText('TENANCY TRIAD // OCCUPIED • OVERDUE • VACANT', 0, -128);
+
+            ctx.font = '800 118px Sora';
+            ctx.shadowColor = 'rgba(0,0,0,0.5)';
+            ctx.shadowBlur = 40;
+            ctx.fillText('EVERY TENANT.', 0, 30);
+            ctx.restore();
+          }
+
+          // Cut 2 (23.4375s – 24.375s): "EVERY FLOOR." over Top-Down 3D + Cinematic 3D Split
+          else if (t < 24.375) {
+            const p = invLerp(23.4375, 24.375, t);
+            ctx.fillStyle = COLORS.obsidianDark;
+            ctx.fillRect(0, 0, 1920, 1080);
+
+            if (images.top3d) {
+              ctx.save();
+              ctx.globalAlpha = 0.55;
+              const s = lerp(1.02, 1.14, p);
+              ctx.translate(960, 540);
+              ctx.scale(s, s);
+              ctx.drawImage(images.top3d, -960, -540, 1920, 1080);
+              ctx.restore();
+            }
+
+            const pop = easeOutBack(invLerp(23.4375, 23.70, t), 1.6);
+            ctx.save();
+            ctx.translate(960, 540);
+            ctx.scale(pop, pop);
+            ctx.fillStyle = COLORS.blueprintCobalt;
+            ctx.beginPath();
+            ctx.roundRect(-220, -155, 440, 44, 22);
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '800 14px Manrope';
+            ctx.textAlign = 'center';
+            ctx.fillText('THREE.JS r185 // F1 • F2 • F3 ISOLATOR', 0, -128);
+
+            ctx.font = '800 118px Sora';
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = COLORS.skyFocus;
+            ctx.shadowBlur = 50;
+            ctx.fillText('EVERY FLOOR.', 0, 30);
+            ctx.restore();
+          }
+
+          // Cut 3 (24.375s – 24.84375s | 1 Beat): "EVERY" (Daylight Mist Flash)
+          else if (t < 24.84375) {
+            ctx.fillStyle = COLORS.surfaceCanvas;
+            ctx.fillRect(0, 0, 1920, 1080);
+            drawFramedScreen(images.dashboard, 960, 540, 1600, 900, { scale: 1.15, alpha: 0.22 });
+            ctx.save();
+            ctx.translate(960, 560);
+            ctx.fillStyle = COLORS.oceanAuthority;
+            ctx.font = '800 142px Sora';
+            ctx.textAlign = 'center';
+            ctx.fillText('EVERY', 0, 0);
+            ctx.restore();
+          }
+
+          // Cut 4 (24.84375s – 25.3125s | 1 Beat): "SINGLE DOLLAR." (Emerald Revenue Flash)
+          else if (t < 25.3125) {
+            ctx.fillStyle = '#06281e';
+            ctx.fillRect(0, 0, 1920, 1080);
+            drawFramedScreen(images.unitModal, 960, 540, 1600, 900, { scale: 1.12, alpha: 0.30 });
+            ctx.save();
+            ctx.translate(960, 555);
+            ctx.fillStyle = '#34d399';
+            ctx.font = '800 116px Sora';
+            ctx.textAlign = 'center';
+            ctx.fillText('SINGLE DOLLAR.', 0, 0);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '800 26px Sora';
+            ctx.fillText('₱34,250 / MO VERIFIED CASH FLOW & RECEIPTS', 0, 65);
+            ctx.restore();
+          }
+
+          // Cut 5 (25.3125s – 25.78125s | 1 Beat): "EXACTLY WHERE" (Blueprint Cobalt Flash)
+          else if (t < 25.78125) {
+            ctx.fillStyle = COLORS.blueprintCobalt;
+            ctx.fillRect(0, 0, 1920, 1080);
+            drawFramedScreen(images.blueprintF1, 960, 540, 1500, 840, { scale: 1.08, alpha: 0.28 });
+            ctx.save();
+            ctx.translate(960, 560);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '800 108px Sora';
+            ctx.textAlign = 'center';
+            ctx.fillText('EXACTLY WHERE', 0, 0);
+            ctx.restore();
+          }
+
+          // Cut 6 (25.78125s – 26.25s | 1 Beat): "IT BELONGS." (Obsidian + Pixel Blueprint Icon)
+          else {
+            ctx.fillStyle = COLORS.obsidianDark;
+            ctx.fillRect(0, 0, 1920, 1080);
+            if (images.faviconHires) {
+              ctx.save();
+              ctx.globalAlpha = 0.22;
+              ctx.drawImage(images.faviconHires, 560, 140, 800, 800);
+              ctx.restore();
+            }
+            ctx.save();
+            ctx.translate(960, 560);
+            ctx.fillStyle = COLORS.occupied;
+            ctx.font = '800 124px Sora';
+            ctx.textAlign = 'center';
+            ctx.fillText('IT BELONGS.', 0, 0);
+            ctx.restore();
+          }
+        }
+
+        // ── Phase 5B (26.25s – 30.00s | Bars 15–16): GRAND ARCHITECTURAL BRAND FINALE ──
+        else {
+          const finT = t - 26.25;
+
+          // Deep Dual-World Horizon Backdrop
+          const finGrad = ctx.createRadialGradient(960, 420, 50, 960, 540, 1250);
+          finGrad.addColorStop(0, '#0f3861');
+          finGrad.addColorStop(0.5, '#07192e');
+          finGrad.addColorStop(1, '#03070c');
+          ctx.fillStyle = finGrad;
+          ctx.fillRect(0, 0, 1920, 1080);
+
+          drawArchitecturalGrid(t, false, 0.20, 0.7);
+          drawParticles(t, 1.0);
+
+          // 2 Background Floating 3D & Dashboard Wings in Soft Parallax
+          const wingP = easeOutCubic(invLerp(26.25, 27.10, t));
+          drawFramedScreen(images.dashboard, lerp(500, 260, wingP), 530, 640, 360, {
+            scale: 0.85,
+            rot: -0.06,
+            alpha: 0.42 * wingP,
+            borderColor: COLORS.skyFocus
+          });
+          drawFramedScreen(images.spatial3d, lerp(1420, 1660, wingP), 530, 640, 360, {
+            scale: 0.85,
+            rot: 0.06,
+            alpha: 0.48 * wingP,
+            borderColor: COLORS.occupied
+          });
+
+          // Center Mascot Building Icon with Volumetric Halo
+          const heroPop = easeOutBack(invLerp(26.25, 26.85, t), 1.7);
+          const mascotImg = images.iconClean || images.icon;
+          if (mascotImg) {
+            ctx.save();
+            ctx.translate(960, 290 + Math.sin(t * 3) * 5);
+            ctx.scale(heroPop, heroPop);
+            ctx.shadowColor = COLORS.skyFocus;
+            ctx.shadowBlur = 55;
+            ctx.drawImage(mascotImg, -105, -120, 210, 238);
+            ctx.restore();
+          }
+
+          // Official Horizontal Brand Card Pill
+          ctx.save();
+          ctx.translate(960, 535);
+          ctx.scale(heroPop, heroPop);
+          ctx.textAlign = 'center';
+
+          ctx.font = '800 74px Sora';
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowColor = 'rgba(71, 157, 233, 0.65)';
+          ctx.shadowBlur = 40;
+          ctx.fillText('PROPERTY VISUALIZER', 0, 0);
+
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = '#34d399';
+          ctx.font = '800 18px Manrope';
+          ctx.letterSpacing = '0.16em';
+          ctx.fillText('THE ARCHITECTURAL CONTROL DECK  •  3D & 2D DIGITAL TWIN', 0, 42);
+
+          // Live URL CTA Button
+          ctx.fillStyle = COLORS.oceanAuthority;
+          ctx.strokeStyle = COLORS.skyFocus;
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.roundRect(-310, 74, 620, 60, 30);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '800 22px Sora';
+          ctx.letterSpacing = '0px';
+          ctx.fillText('property-visualizer-b04f3.web.app', 0, 112);
+
+          // Tenancy Triad + Stack Footer
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '700 13px "JetBrains Mono", monospace';
+          ctx.fillText('NEXT.JS 16  •  REACT 19  •  THREE.JS r185  •  TAILWIND CSS v4  •  FIREBASE', 0, 178);
+          ctx.restore();
+
+          // Smooth Final Fade Out (29.55s -> 30.00s)
+          if (t >= 29.55) {
+            const fadeOut = invLerp(29.55, 30.00, t);
+            ctx.fillStyle = `rgba(0, 0, 0, ${fadeOut})`;
+            ctx.fillRect(0, 0, 1920, 1080);
+          }
+        }
+
+        drawShowreelHUD(t, 'ACT 05', 'SPATIAL TRUTH OVER SPREADSHEETS', 'PROPVIZ SHOWREEL', false);
+      }
+    };
+
+    window.preloadAll = preloadAll;
+  </script>
+</body>
+</html>

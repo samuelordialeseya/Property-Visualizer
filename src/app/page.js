@@ -219,7 +219,14 @@ export default function Home() {
                   if (unit && unit.element_type && unit.element_type !== "unit") return;
                   setSelectedUnit3D(unit);
                 }}
-                onSaveLayout={async (editorRooms, deletedRoomIds) => {
+                onSaveLayout={async (editorRooms, deletedRoomIds, architectureData) => {
+                  // 0. Persist building-level BIM architecture (roofs, materials, exterior color) if provided
+                  if (architectureData) {
+                    await updateBuilding(selectedBuilding.id, {
+                      architecture: architectureData,
+                    });
+                  }
+
                   // 1. Process deletions
                   for (const dId of deletedRoomIds) {
                     const toDel = buildingUnits.find(u => u.id === dId);
@@ -239,12 +246,15 @@ export default function Home() {
                       z: room.z,
                       width: room.width,
                       depth: room.depth,
+                      bounds: Array.isArray(room.bounds) ? room.bounds : null,
                       height: room.height,
                       rotation: room.rotation || 0,
+                      door_wall: room.door_wall || null,
+                      window_style: room.window_style || "standard",
                       roof_type: room.roof_type || 'flat',
                       material_type: room.material_type || 'stucco',
                       texture_url: room.texture_url || null,
-                      wall_color: room.wall_color || '#4a5a66',
+                      wall_color: room.wall_color || '#e2d9ce',
                       element_type: room.element_type || 'unit',
                       has_balcony: !!room.has_balcony,
                       balcony_side: room.balcony_side || 'S',
@@ -253,7 +263,7 @@ export default function Home() {
                       buildingId: selectedBuilding.id
                     };
 
-                    if (room.id.startsWith("new-temp-")) {
+                    if (String(room.id).startsWith("new-temp-")) {
                       await addUnit(selectedBuilding.id, unitData);
                     } else {
                       const existingRef = buildingUnits.find(u => u.id === room.id)?.ref;

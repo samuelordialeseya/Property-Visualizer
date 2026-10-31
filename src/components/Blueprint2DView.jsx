@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useRef, useMemo } from "react";
-import { ZoomIn, ZoomOut, RotateCcw, Wrench, Box } from "lucide-react";
+import { ZoomIn, ZoomOut, RotateCcw, Wrench, Box, MapPin, User } from "lucide-react";
+import { solveFloorTopology } from "@/lib/buildingGeometry";
 
 const STATUS_CONFIG = {
   occupied: { border: "#d98a53", bg: "rgba(217, 138, 83, 0.18)", label: "Occupied", pillBg: "#d98a53" },
@@ -18,6 +19,7 @@ export default function Blueprint2DView({
   onSelectUnit,
   activeFloor = "All",
   searchQuery = "",
+  statusFilter = "all",
   hoveredUnitId,
   onHover,
   onEnterEditMode,
@@ -43,18 +45,20 @@ export default function Blueprint2DView({
   }, [units, activeFloor]);
 
   // Separate structural elements (render underneath) from rentable units
-  const { structuralUnits, rentableUnits } = useMemo(() => {
+  const { structuralUnits, rentableUnits, topology } = useMemo(() => {
+    const targetFloorNum = activeFloor === "All" ? 1 : Number(activeFloor) || 1;
+    const topo = solveFloorTopology(floorUnits, targetFloorNum, units);
     const structural = [];
     const rentable = [];
-    floorUnits.forEach((u) => {
+    topo.spaces.forEach((u) => {
       if (u.element_type && u.element_type !== "unit") {
         structural.push(u);
       } else {
         rentable.push(u);
       }
     });
-    return { structuralUnits: structural, rentableUnits: rentable };
-  }, [floorUnits]);
+    return { structuralUnits: structural, rentableUnits: rentable, topology: topo };
+  }, [floorUnits, activeFloor, units]);
 
   // Calculate bounding box in world meters (including balconies)
   const bounds = useMemo(() => {
@@ -194,8 +198,9 @@ export default function Blueprint2DView({
             />
             <foreignObject x="0" y="0" width={bounds.width * PIXELS_PER_METER} height={46}>
               <div className="w-full h-full flex items-center justify-between px-4 pointer-events-none select-none">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-sky-300 bg-[#0b3860]/90 border border-[#479de9]/50 px-2.5 py-0.5 rounded-full">
-                  🛣️ {streetLabel}
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-sky-300 bg-[#0b3860]/90 border border-[#479de9]/50 px-2.5 py-0.5 rounded-full">
+                  <MapPin size={10} className="text-[#479de9]" />
+                  <span>{streetLabel}</span>
                 </span>
                 {showMainGate && (
                   <span className="text-[10px] font-bold uppercase tracking-widest text-amber-300 bg-amber-950/90 border border-amber-400/50 px-2.5 py-0.5 rounded-full">
@@ -316,10 +321,17 @@ export default function Blueprint2DView({
             const isHovered = hoveredUnitId === unit.id;
             const hasTicket = tickets.some((t) => (t.unit_id === unit.id || t.unitId === unit.id) && t.status !== "settled");
 
-            const isDimmed = q.length > 0 && !(
+            const isSearchDimmed = q.length > 0 && !(
               (unit.unit_label || "").toLowerCase().includes(q) ||
               (unit.tenant?.name || "").toLowerCase().includes(q)
             );
+            const isFilterDimmed =
+              statusFilter &&
+              statusFilter !== "all" &&
+              (statusFilter === "maintenance"
+                ? !hasTicket
+                : (unit.status || "vacant") !== statusFilter);
+            const isDimmed = isSearchDimmed || isFilterDimmed;
 
             const status = STATUS_CONFIG[unit.status] || STATUS_CONFIG.vacant;
 
@@ -400,17 +412,6 @@ export default function Blueprint2DView({
                   fill={status.pillBg}
                 />
 
-                {/* Architectural Door Threshold Indicator */}
-                <rect
-                  x={pxW / 2 - 12}
-                  y={pxD - 3}
-                  width="24"
-                  height="5"
-                  rx="1.5"
-                  fill="#38bdf8"
-                  opacity="0.85"
-                />
-
                 {/* Room Center Content: SVG ForeignObject */}
                 <foreignObject x="4" y="10" width={Math.max(40, pxW - 8)} height={Math.max(30, pxD - 14)}>
                   <div className="w-full h-full flex flex-col items-center justify-center p-1 text-center select-none overflow-hidden">
@@ -420,7 +421,7 @@ export default function Blueprint2DView({
                     </span>
 
                     {/* Dimensions & Floor */}
-                    <span className="text-[9.5px] font-mono font-medium text-zinc-400 mt-0.5 leading-none">
+                    <span className="text-[9.5px] font-['Sora'] tabular-nums font-medium text-zinc-400 mt-0.5 leading-none">
                       {w.toFixed(1)}m × {d.toFixed(1)}m
                     </span>
 
@@ -428,11 +429,12 @@ export default function Blueprint2DView({
                     {pxD > 75 && (
                       <div className="mt-1 flex flex-col items-center max-w-full">
                         {unit.tenant?.name ? (
-                          <span className="text-[10px] font-semibold text-zinc-200 truncate max-w-[90%] bg-black/40 px-1.5 py-0.5 rounded leading-tight">
-                            👤 {unit.tenant.name}
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-zinc-200 truncate max-w-[90%] bg-black/40 px-1.5 py-0.5 rounded leading-tight">
+                            <User size={9.5} className="text-[#479de9] shrink-0" />
+                            <span className="truncate">{unit.tenant.name}</span>
                           </span>
                         ) : (
-                          <span className="text-[9.5px] font-semibold text-zinc-400">
+                          <span className="text-[9.5px] font-semibold font-['Sora'] tabular-nums text-zinc-400">
                             {unit.monthly_rent ? `₱${Number(unit.monthly_rent).toLocaleString()}` : "Vacant"}
                           </span>
                         )}
@@ -450,6 +452,104 @@ export default function Blueprint2DView({
               </g>
             );
           })}
+
+          {/* 3. Topological CAD Overlay: Door Swing Arcs, Exterior Windows & Columns */}
+          <g className="pointer-events-none">
+            {/* Exterior Window Double-Line CAD Symbols */}
+            {(topology?.windows || []).map((w) => {
+              const isH = w.orientation === "H";
+              const lenPx = w.width * PIXELS_PER_METER;
+              const cx = (isH ? w.center : w.coord) * PIXELS_PER_METER;
+              const cz = (isH ? w.coord : w.center) * PIXELS_PER_METER;
+              return (
+                <g key={w.id} transform={`translate(${cx}, ${cz})`}>
+                  <rect
+                    x={isH ? -lenPx / 2 : -4}
+                    y={isH ? -4 : -lenPx / 2}
+                    width={isH ? lenPx : 8}
+                    height={isH ? 8 : lenPx}
+                    rx="1.5"
+                    fill="#0b0f13"
+                    stroke="#38bdf8"
+                    strokeWidth="1.4"
+                  />
+                  <line
+                    x1={isH ? -lenPx / 2 + 2 : 0}
+                    y1={isH ? 0 : -lenPx / 2 + 2}
+                    x2={isH ? lenPx / 2 - 2 : 0}
+                    y2={isH ? 0 : lenPx / 2 - 2}
+                    stroke="#7dd3fc"
+                    strokeWidth="1.2"
+                  />
+                </g>
+              );
+            })}
+
+            {/* Architectural Door Thresholds + 90-Degree Swing Arcs */}
+            {(topology?.doors || []).map((d) => {
+              const isH = d.orientation === "H";
+              const rPx = d.width * PIXELS_PER_METER * 0.88;
+              const cx = (isH ? d.center : d.coord) * PIXELS_PER_METER;
+              const cz = (isH ? d.coord : d.center) * PIXELS_PER_METER;
+              const dir = d.swingDir || -1;
+
+              // Hinge at one end of doorway, swinging 90 degrees into the room
+              const hx = isH ? cx - rPx / 2 : cx;
+              const hz = isH ? cz : cz - rPx / 2;
+              const openX = isH ? hx : hx + dir * rPx;
+              const openZ = isH ? hz + dir * rPx : hz;
+              const closedX = isH ? hx + rPx : hx;
+              const closedZ = isH ? hz : hz + rPx;
+              const sweepFlag = isH ? (dir > 0 ? 1 : 0) : dir > 0 ? 0 : 1;
+
+              return (
+                <g key={d.id}>
+                  {/* Wall break clear threshold */}
+                  <rect
+                    x={isH ? cx - rPx / 2 : cx - 4}
+                    y={isH ? cz - 4 : cz - rPx / 2}
+                    width={isH ? rPx : 8}
+                    height={isH ? 8 : rPx}
+                    fill="#0b0f13"
+                  />
+                  {/* Open Door Leaf */}
+                  <line
+                    x1={hx}
+                    y1={hz}
+                    x2={openX}
+                    y2={openZ}
+                    stroke="#fbbf24"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                  />
+                  {/* 90-Degree Quarter-Circle Swing Arc */}
+                  <path
+                    d={`M ${closedX} ${closedZ} A ${rPx} ${rPx} 0 0 ${sweepFlag} ${openX} ${openZ}`}
+                    fill="none"
+                    stroke="#fbbf24"
+                    strokeWidth="1.1"
+                    strokeDasharray="3 2"
+                    opacity="0.85"
+                  />
+                </g>
+              );
+            })}
+
+            {/* Structural Walkway & Porch Columns */}
+            {(topology?.columns || []).map((col, idx) => (
+              <rect
+                key={`col_${idx}`}
+                x={col.x * PIXELS_PER_METER - 4}
+                y={col.z * PIXELS_PER_METER - 4}
+                width="8"
+                height="8"
+                rx="1.5"
+                fill="#e2e8f0"
+                stroke="#0f172a"
+                strokeWidth="1.2"
+              />
+            ))}
+          </g>
         </svg>
       </div>
 
@@ -479,42 +579,42 @@ export default function Blueprint2DView({
         </div>
       )}
 
-      {/* ── Floating Zoom / Pan Controls (Top-Right) ───────────────── */}
-      <div className="absolute top-4 right-4 z-20 flex items-center gap-1 bg-zinc-900 border border-white/10 rounded-xl p-1 shadow-xl">
+      {/* ── Floating Zoom / Pan Controls (Below Top Header Bar) ────── */}
+      <div className="absolute top-20 right-4 z-20 flex items-center gap-1 hud-surface rounded-2xl p-1">
         <button
           type="button"
           onClick={() => handleZoom(0.2)}
           aria-label="Zoom in blueprint"
           title="Zoom In"
-          className="h-8 w-8 rounded-lg text-zinc-300 hover:text-white hover:bg-white/10 flex items-center justify-center transition active:scale-90 relative after:absolute after:-inset-1.5 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2270b8]"
+          className="press-scale h-8 w-8 rounded-xl text-[#8b949e] hover:text-white hover:bg-white/[0.08] flex items-center justify-center relative after:absolute after:-inset-1.5 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2270b8] cursor-pointer"
         >
-          <ZoomIn size={16} />
+          <ZoomIn size={15} />
         </button>
         <button
           type="button"
           onClick={() => handleZoom(-0.2)}
           aria-label="Zoom out blueprint"
           title="Zoom Out"
-          className="h-8 w-8 rounded-lg text-zinc-300 hover:text-white hover:bg-white/10 flex items-center justify-center transition active:scale-90 relative after:absolute after:-inset-1.5 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2270b8]"
+          className="press-scale h-8 w-8 rounded-xl text-[#8b949e] hover:text-white hover:bg-white/[0.08] flex items-center justify-center relative after:absolute after:-inset-1.5 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2270b8] cursor-pointer"
         >
-          <ZoomOut size={16} />
+          <ZoomOut size={15} />
         </button>
-        <div className="h-4 w-px bg-white/15 mx-0.5" />
+        <div className="h-4 w-px bg-[#262f38] mx-0.5" />
         <button
           type="button"
           onClick={handleResetView}
           aria-label="Reset view position"
           title="Reset View"
-          className="h-8 w-8 rounded-lg text-zinc-300 hover:text-white hover:bg-white/10 flex items-center justify-center transition active:scale-90 relative after:absolute after:-inset-1.5 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2270b8]"
+          className="press-scale h-8 w-8 rounded-xl text-[#8b949e] hover:text-white hover:bg-white/[0.08] flex items-center justify-center relative after:absolute after:-inset-1.5 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2270b8] cursor-pointer"
         >
-          <RotateCcw size={14} />
+          <RotateCcw size={13.5} />
         </button>
       </div>
 
       {/* ── Mode Info Badge (Bottom-Right) ─────────────────────────── */}
-      <div className="absolute bottom-6 right-6 z-20 pointer-events-none hidden sm:flex items-center gap-2 bg-zinc-900 border border-white/10 rounded-xl px-3 py-1.5 shadow-lg text-[11px] text-zinc-400 font-['Manrope']">
+      <div className="absolute bottom-4 right-4 z-20 pointer-events-none hidden lg:flex items-center gap-2 hud-surface rounded-xl px-3 py-1.5 text-[10.5px] text-[#8b949e] font-['Manrope']">
         <span className="h-2 w-2 rounded-full bg-emerald-400" />
-        <span>2D Architectural Blueprint · Touch/drag to pan</span>
+        <span>2D Architectural Blueprint · Drag to pan</span>
       </div>
     </div>
   );

@@ -2,14 +2,19 @@
 
 import React, { useMemo, useState, useEffect } from "react";
 import * as THREE from "three";
-import { Text, Html, RoundedBox } from "@react-three/drei";
+import { Html, RoundedBox, Edges } from "@react-three/drei";
 import {
   getWallTextures,
+  getRoofTextures,
   getInteriorFloorTexture,
   getAsphaltRoadTexture,
   getPavingTexture,
   compressFacadeImage,
 } from "@/lib/architecturalTextures";
+import {
+  compileFloorGeometries,
+  compileBuildingRoofs,
+} from "@/lib/buildingGeometry";
 
 /**
  * Loads a base64 / URL image into a THREE.Texture with sRGB color space.
@@ -176,8 +181,8 @@ export function DetailedUnitInterior3D({ w, d, h, statusColor, isOccupied }) {
   return (
     <group position={[0, -h / 2, 0]}>
       {/* Textured Ceramic Tile Floor Slab */}
-      <mesh position={[0, 0.07, 0]} receiveShadow raycast={() => null}>
-        <boxGeometry args={[w - 0.18, 0.1, d - 0.18]} />
+      <mesh position={[0, 0.06, 0]} receiveShadow raycast={() => null}>
+        <boxGeometry args={[w - 0.18, 0.12, d - 0.18]} />
         <meshStandardMaterial
           map={floorTex.map}
           bumpMap={floorTex.bumpMap}
@@ -407,6 +412,68 @@ export function DetailedUnitExteriorAttachments({
 }
 
 /**
+ * Lightweight Canvas2D text quad (creates 0 WebGL contexts, preventing GPU context exhaustion).
+ */
+const textTextureCache = new Map();
+
+function getCanvasTextTexture(text, { color = "#ffffff", fontSize = 48, fontWeight = "bold" } = {}) {
+  const key = `${text}_${color}_${fontSize}_${fontWeight}`;
+  if (textTextureCache.has(key)) return textTextureCache.get(key);
+  if (typeof document === "undefined") return null;
+
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const font = `${fontWeight} ${fontSize}px sans-serif`;
+  ctx.font = font;
+  const metrics = ctx.measureText(text);
+  const textWidth = Math.ceil(metrics.width) + 32;
+  const textHeight = Math.ceil(fontSize * 1.35) + 20;
+  canvas.width = Math.max(64, textWidth);
+  canvas.height = Math.max(32, textHeight);
+
+  ctx.font = font;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = color;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const aspect = canvas.width / canvas.height;
+  const res = { texture: tex, aspect };
+  textTextureCache.set(key, res);
+  return res;
+}
+
+function CanvasTextPlane({
+  text,
+  height = 0.5,
+  color = "#ffffff",
+  fontSize = 52,
+  fontWeight = "bold",
+  position = [0, 0, 0],
+  rotation = [0, 0, 0],
+}) {
+  const res = useMemo(
+    () => getCanvasTextTexture(text, { color, fontSize, fontWeight }),
+    [text, color, fontSize, fontWeight]
+  );
+  if (!res || !res.texture) return null;
+  const width = height * res.aspect;
+
+  return (
+    <mesh position={position} rotation={rotation} raycast={() => null}>
+      <planeGeometry args={[width, height]} />
+      <meshBasicMaterial
+        map={res.texture}
+        transparent
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
+
+/**
  * Renders the recognizable real-world property surroundings:
  * - High-res Asphalt Front Road with yellow lane markings & concrete curbs
  * - Customizable Street Name painted on the road + corner street sign
@@ -545,18 +612,14 @@ export function SiteContext3D({
         </mesh>
 
         {/* Street Name Stencil on Asphalt */}
-        <Text
+        <CanvasTextPlane
+          text={`◄  ${streetName.toUpperCase()}  ►`}
           position={[0, 0.04, 1.35]}
           rotation={[-Math.PI / 2, 0, 0]}
-          fontSize={0.58}
+          height={0.62}
           color="#e2e8f0"
-          anchorX="center"
-          anchorY="middle"
-          outlineWidth={0.03}
-          outlineColor="#0f172a"
-        >
-          {`◄  ${streetName.toUpperCase()}  ►`}
-        </Text>
+          fontSize={48}
+        />
 
         {/* Streetlamp Post & Corner Street Sign */}
         <group position={[-streetConfig.roadLength * 0.28, 0, -3.1]}>
@@ -570,16 +633,13 @@ export function SiteContext3D({
             <boxGeometry args={[1.35, 0.32, 0.04]} />
             <meshStandardMaterial color="#0b3860" roughness={0.4} />
           </mesh>
-          <Text
+          <CanvasTextPlane
+            text={streetName}
             position={[0.45, 2.55, 0.03]}
-            fontSize={0.13}
+            height={0.16}
             color="#f8fafc"
-            anchorX="center"
-            anchorY="middle"
-            maxWidth={1.25}
-          >
-            {streetName}
-          </Text>
+            fontSize={36}
+          />
           {/* Warm Streetlight Luminaire */}
           <mesh position={[0, 3.22, 0.35]} raycast={() => null}>
             <boxGeometry args={[0.24, 0.08, 0.45]} />
@@ -612,17 +672,13 @@ export function SiteContext3D({
             <boxGeometry args={[3.45, 0.24, 0.46]} />
             <meshStandardMaterial color="#0b3860" roughness={0.45} />
           </mesh>
-          <Text
+          <CanvasTextPlane
+            text="MAIN ENTRANCE"
             position={[0, 1.98, 0.25]}
-            fontSize={0.15}
+            height={0.18}
             color="#93c5fd"
-            anchorX="center"
-            anchorY="middle"
-            outlineWidth={0.015}
-            outlineColor="#06152d"
-          >
-            MAIN ENTRANCE
-          </Text>
+            fontSize={38}
+          />
           {/* Entrance Walkway Path */}
           <mesh position={[0, 0.025, -1.2]} receiveShadow raycast={() => null}>
             <boxGeometry args={[2.4, 0.03, 2.4]} />
@@ -660,16 +716,14 @@ export function SiteContext3D({
                 <boxGeometry args={[0.16, 0.09, 1.3]} />
                 <meshStandardMaterial color="#eab308" roughness={0.6} />
               </mesh>
-              <Text
+              <CanvasTextPlane
+                text={`P${i + 1}`}
                 position={[-0.4, 0.02, 0]}
                 rotation={[-Math.PI / 2, 0, -Math.PI / 2]}
-                fontSize={0.34}
+                height={0.42}
                 color="#93c5fd"
-                anchorX="center"
-                anchorY="middle"
-              >
-                {`P${i + 1}`}
-              </Text>
+                fontSize={48}
+              />
             </group>
           ))}
         </group>
@@ -695,20 +749,32 @@ export function SiteContext3D({
             <Html position={[0, 1.35, 0]} center distanceFactor={24} zIndexRange={[10, 0]}>
               <div
                 style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
                   padding: "3px 9px",
                   borderRadius: 999,
-                  background: "rgba(11, 56, 96, 0.92)",
-                  border: "1px solid rgba(71, 157, 233, 0.65)",
-                  color: "#f8fafc",
+                  background: "#141a21",
+                  border: "1px solid #262f38",
+                  color: "#f0f6fc",
                   fontSize: 10,
                   fontWeight: 700,
                   whiteSpace: "nowrap",
                   letterSpacing: "0.04em",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.45)",
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.55)",
                   pointerEvents: "none",
                 }}
               >
-                📍 {lm.label}
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: "#479de9",
+                    flexShrink: 0,
+                  }}
+                />
+                <span>{lm.label}</span>
               </div>
             </Html>
           </group>
@@ -787,181 +853,89 @@ export function SiteAndFacadeModal({
 
   return (
     <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 90,
-        background: "rgba(6, 15, 30, 0.76)",
-        backdropFilter: "blur(8px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-      }}
+      className="fixed inset-0 z-[95] flex items-center justify-center bg-black/75 p-4"
       onClick={onClose}
     >
       <div
-        style={{
-          width: "100%",
-          maxWidth: 660,
-          maxHeight: "88vh",
-          overflowY: "auto",
-          background: "linear-gradient(165deg, rgba(11, 56, 96, 0.97), rgba(8, 28, 52, 0.99))",
-          border: "1px solid rgba(71, 157, 233, 0.45)",
-          borderRadius: 16,
-          padding: 20,
-          color: "#f8fafc",
-          boxShadow: "0 24px 64px rgba(0, 0, 0, 0.65)",
-        }}
+        className="w-full max-w-2xl max-h-[88vh] overflow-y-auto hud-surface rounded-3xl p-6 text-[#f0f6fc] animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 14,
-          }}
-        >
+        <div className="flex items-start justify-between gap-3 pb-4 border-b border-[#262f38]">
           <div>
-            <div
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-                color: "#60a5fa",
-              }}
-            >
-              Real-World Familiarity & Orientation
+            <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#479de9] font-['Manrope']">
+              Real-World Familiarity &amp; Orientation
             </div>
-            <h3 style={{ fontSize: 18, fontWeight: 700, margin: "2px 0 0" }}>
-              Photo Facade Mapping, Textures & Street Landmarks
+            <h3 className="text-[17px] font-bold text-[#f0f6fc] font-['Sora'] tracking-[-0.02em] mt-0.5">
+              Photo Facade Mapping, Textures &amp; Street Landmarks
             </h3>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            style={{
-              background: "rgba(255,255,255,0.08)",
-              border: "1px solid rgba(255,255,255,0.15)",
-              color: "#cbd5e1",
-              borderRadius: 8,
-              padding: "6px 10px",
-              cursor: "pointer",
-              fontSize: 12,
-              fontWeight: 600,
-            }}
+            className="press-scale h-8 w-8 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-[#262f38] flex items-center justify-center text-[#8b949e] hover:text-white cursor-pointer"
           >
             ✕
           </button>
         </div>
 
         {/* Mode Tabs */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <div className="grid grid-cols-2 gap-1.5 p-1 bg-[#0b0f13] border border-[#262f38] rounded-2xl my-4">
           <button
+            type="button"
             onClick={() => setActiveTab("photos")}
-            style={{
-              flex: 1,
-              padding: "9px 12px",
-              borderRadius: 9,
-              border: "1px solid",
-              borderColor:
-                activeTab === "photos" ? "#479de9" : "rgba(148,163,184,0.2)",
-              background:
-                activeTab === "photos"
-                  ? "rgba(34, 112, 184, 0.38)"
-                  : "rgba(15, 23, 42, 0.45)",
-              color: "#f8fafc",
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
+            className={`press-scale py-2 px-3 rounded-xl text-[12px] font-bold font-['Manrope'] cursor-pointer ${
+              activeTab === "photos"
+                ? "bg-[#2270b8] text-white shadow-sm"
+                : "text-[#8b949e] hover:text-[#f0f6fc]"
+            }`}
           >
-            📷 Real Photo Facades & PBR Finish
+            Real Photo Facades &amp; PBR Finish
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab("street")}
-            style={{
-              flex: 1,
-              padding: "9px 12px",
-              borderRadius: 9,
-              border: "1px solid",
-              borderColor:
-                activeTab === "street" ? "#479de9" : "rgba(148,163,184,0.2)",
-              background:
-                activeTab === "street"
-                  ? "rgba(34, 112, 184, 0.38)"
-                  : "rgba(15, 23, 42, 0.45)",
-              color: "#f8fafc",
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
+            className={`press-scale py-2 px-3 rounded-xl text-[12px] font-bold font-['Manrope'] cursor-pointer ${
+              activeTab === "street"
+                ? "bg-[#2270b8] text-white shadow-sm"
+                : "text-[#8b949e] hover:text-[#f0f6fc]"
+            }`}
           >
-            🛣️ Street Name, Gate & Landmarks
+            Street Name, Gate &amp; Landmarks
           </button>
         </div>
 
         {activeTab === "photos" ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div
-              style={{
-                background: "rgba(15, 23, 42, 0.55)",
-                border: "1px solid rgba(71, 157, 233, 0.28)",
-                borderRadius: 10,
-                padding: 12,
-                fontSize: 12,
-                color: "#cbd5e1",
-                lineHeight: 1.5,
-              }}
-            >
-              Upload actual photos of your building&apos;s <strong>Front, Back, Left, and Right</strong> sides. They project directly onto the 3D building shell, and fade into <strong>X-Ray Mode</strong> when you hover or click rooms so you can see room occupancy inside your real building.
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-[#0b0f13] border border-[#262f38] p-3.5 text-[12px] text-[#8b949e] font-['Manrope'] leading-relaxed">
+              Upload actual photos of your building&apos;s <strong className="text-[#f0f6fc]">Front, Back, Left, and Right</strong> sides. They project directly onto the 3D building shell and fade into <strong className="text-[#479de9]">X-Ray Mode</strong> when you hover or select units.
             </div>
 
             {/* 4-Side Photo Upload Grid */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-                gap: 10,
-              }}
-            >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {sides.map(({ key, label, hint }) => {
                 const currentImg = facadePhotos?.[key];
                 return (
                   <div
                     key={key}
-                    style={{
-                      background: "rgba(15, 23, 42, 0.6)",
-                      border: "1px solid rgba(148, 163, 184, 0.25)",
-                      borderRadius: 10,
-                      padding: 10,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 8,
-                    }}
+                    className="rounded-2xl bg-[#0b0f13] border border-[#262f38] p-3 flex flex-col gap-2"
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div className="flex items-center justify-between">
                       <div>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: "#f8fafc" }}>{label}</div>
-                        <div style={{ fontSize: 10, color: "#94a3b8" }}>{hint}</div>
+                        <div className="text-[12px] font-bold text-[#f0f6fc] font-['Sora']">
+                          {label}
+                        </div>
+                        <div className="text-[10.5px] text-[#8b949e] font-['Manrope']">
+                          {hint}
+                        </div>
                       </div>
                       {currentImg && (
                         <button
+                          type="button"
                           onClick={() =>
                             setFacadePhotos((prev) => ({ ...(prev || {}), [key]: null }))
                           }
-                          style={{
-                            padding: "3px 8px",
-                            borderRadius: 6,
-                            border: "1px solid rgba(239,68,68,0.4)",
-                            background: "rgba(239,68,68,0.15)",
-                            color: "#fca5a5",
-                            fontSize: 10,
-                            fontWeight: 700,
-                            cursor: "pointer",
-                          }}
+                          className="press-scale px-2 py-0.5 rounded-lg border border-rose-500/35 bg-rose-500/15 text-rose-300 text-[10px] font-bold cursor-pointer"
                         >
                           Clear
                         </button>
@@ -969,46 +943,25 @@ export function SiteAndFacadeModal({
                     </div>
 
                     {currentImg ? (
-                      <div
-                        style={{
-                          height: 110,
-                          borderRadius: 8,
-                          overflow: "hidden",
-                          border: "1px solid rgba(71, 157, 233, 0.45)",
-                          position: "relative",
-                        }}
-                      >
+                      <div className="h-28 rounded-xl overflow-hidden border border-[#2270b8]/45 relative">
                         <img
                           src={currentImg}
                           alt={label}
-                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                          className="w-full h-full object-cover"
                         />
                       </div>
                     ) : (
-                      <label
-                        style={{
-                          height: 110,
-                          borderRadius: 8,
-                          border: "1px dashed rgba(71, 157, 233, 0.45)",
-                          background: "rgba(11, 56, 96, 0.25)",
-                          display: "flex",
-                          flexDirection: "column",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          cursor: "pointer",
-                          fontSize: 11,
-                          color: "#93c5fd",
-                          fontWeight: 600,
-                        }}
-                      >
-                        {uploadingSide === key ? "Optimizing photo..." : "+ Upload Real Photo"}
-                        <span style={{ fontSize: 10, color: "#64748b", marginTop: 3 }}>
+                      <label className="press-scale h-28 rounded-xl border border-dashed border-[#2270b8]/45 bg-[#2270b8]/10 hover:bg-[#2270b8]/15 flex flex-col items-center justify-center cursor-pointer text-[11.5px] text-[#479de9] font-bold font-['Manrope']">
+                        <span>
+                          {uploadingSide === key ? "Optimizing photo..." : "+ Upload Real Photo"}
+                        </span>
+                        <span className="text-[10px] text-[#8b949e] font-normal mt-1">
                           JPG, PNG, WebP (Auto-fitted)
                         </span>
                         <input
                           type="file"
                           accept="image/*"
-                          style={{ display: "none" }}
+                          className="hidden"
                           onChange={(e) => handleFileChange(key, e.target.files?.[0])}
                         />
                       </label>
@@ -1019,28 +972,19 @@ export function SiteAndFacadeModal({
             </div>
 
             {/* X-Ray Slider & Architectural Texture Selector */}
-            <div
-              style={{
-                background: "rgba(15, 23, 42, 0.55)",
-                border: "1px solid rgba(148, 163, 184, 0.22)",
-                borderRadius: 10,
-                padding: 12,
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: 12, fontWeight: 700 }}>
+            <div className="rounded-2xl bg-[#0b0f13] border border-[#262f38] p-3.5 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[12px] font-bold text-[#f0f6fc] font-['Sora'] tabular-nums">
                   Photo Shell Opacity (X-Ray Blend): {Math.round(facadeOpacity * 100)}%
                 </span>
-                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#93c5fd", cursor: "pointer" }}>
+                <label className="flex items-center gap-2 text-[11px] text-[#8b949e] font-['Manrope'] cursor-pointer">
                   <input
                     type="checkbox"
                     checked={autoXRayOnSelect}
                     onChange={(e) => setAutoXRayOnSelect(e.target.checked)}
+                    className="accent-[#2270b8] rounded"
                   />
-                  Auto X-Ray fade when hovering/selecting rooms
+                  <span>Auto X-Ray fade when selecting units</span>
                 </label>
               </div>
               <input
@@ -1050,14 +994,14 @@ export function SiteAndFacadeModal({
                 step={0.05}
                 value={facadeOpacity}
                 onChange={(e) => setFacadeOpacity(parseFloat(e.target.value))}
-                style={{ width: "100%", accentColor: "#479de9" }}
+                className="w-full accent-[#479de9] cursor-pointer"
               />
 
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
-                <span style={{ fontSize: 12, fontWeight: 700 }}>
-                  3D Architectural Wall Material (PBR Bump & Grain):
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#262f38]">
+                <span className="text-[11.5px] font-bold text-[#8b949e] font-['Manrope']">
+                  3D Wall Material (Procedural PBR Grain):
                 </span>
-                <div style={{ display: "flex", gap: 6 }}>
+                <div className="flex items-center gap-1.5">
                   {[
                     { id: "concrete", label: "Precast Concrete" },
                     { id: "stucco", label: "Warm Stucco" },
@@ -1065,21 +1009,13 @@ export function SiteAndFacadeModal({
                   ].map((mat) => (
                     <button
                       key={mat.id}
+                      type="button"
                       onClick={() => setWallFinish(mat.id)}
-                      style={{
-                        padding: "5px 10px",
-                        borderRadius: 7,
-                        border: "1px solid",
-                        borderColor: wallFinish === mat.id ? "#479de9" : "rgba(148,163,184,0.25)",
-                        background:
-                          wallFinish === mat.id
-                            ? "rgba(34, 112, 184, 0.45)"
-                            : "rgba(15, 23, 42, 0.6)",
-                        color: "#f8fafc",
-                        fontSize: 11,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
+                      className={`press-scale px-3 py-1.5 rounded-xl border text-[11px] font-bold font-['Manrope'] cursor-pointer ${
+                        wallFinish === mat.id
+                          ? "bg-[#2270b8] border-[#479de9] text-white"
+                          : "bg-[#141a21] border-[#262f38] text-[#8b949e] hover:text-white"
+                      }`}
                     >
                       {mat.label}
                     </button>
@@ -1089,60 +1025,34 @@ export function SiteAndFacadeModal({
             </div>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div className="space-y-4">
             {/* Street & Gate Settings */}
-            <div
-              style={{
-                background: "rgba(15, 23, 42, 0.55)",
-                border: "1px solid rgba(148, 163, 184, 0.22)",
-                borderRadius: 10,
-                padding: 12,
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 12,
-              }}
-            >
+            <div className="rounded-2xl bg-[#0b0f13] border border-[#262f38] p-3.5 grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label style={{ fontSize: 11, color: "#93c5fd", fontWeight: 700, display: "block", marginBottom: 4 }}>
+                <label className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-[#8b949e] block mb-1 font-['Manrope']">
                   Street / Road Name in Front
                 </label>
                 <input
                   type="text"
                   value={siteContext?.streetName ?? ""}
-                  placeholder="e.g. Rizal Ave. / Main Road"
+                  placeholder="e.g. 106 Maple Ave."
                   onChange={(e) =>
                     setSiteContext((prev) => ({ ...(prev || {}), streetName: e.target.value }))
                   }
-                  style={{
-                    width: "100%",
-                    padding: "7px 10px",
-                    borderRadius: 8,
-                    border: "1px solid rgba(71, 157, 233, 0.4)",
-                    background: "rgba(6, 15, 30, 0.8)",
-                    color: "#f8fafc",
-                    fontSize: 12,
-                  }}
+                  className="w-full px-3 py-2 rounded-xl border border-[#262f38] focus:border-[#2270b8] bg-[#141a21] text-[#f0f6fc] text-[12px] outline-none"
                 />
               </div>
 
               <div>
-                <label style={{ fontSize: 11, color: "#93c5fd", fontWeight: 700, display: "block", marginBottom: 4 }}>
-                  Which Side Faces the Street?
+                <label className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-[#8b949e] block mb-1 font-['Manrope']">
+                  Street-Facing Orientation
                 </label>
                 <select
                   value={siteContext?.streetSide || "front"}
                   onChange={(e) =>
                     setSiteContext((prev) => ({ ...(prev || {}), streetSide: e.target.value }))
                   }
-                  style={{
-                    width: "100%",
-                    padding: "7px 10px",
-                    borderRadius: 8,
-                    border: "1px solid rgba(71, 157, 233, 0.4)",
-                    background: "rgba(6, 15, 30, 0.9)",
-                    color: "#f8fafc",
-                    fontSize: 12,
-                  }}
+                  className="w-full px-3 py-2 rounded-xl border border-[#262f38] focus:border-[#2270b8] bg-[#141a21] text-[#f0f6fc] text-[12px] outline-none"
                 >
                   <option value="front">Front Side (South / +Z)</option>
                   <option value="back">Back Side (North / -Z)</option>
@@ -1152,7 +1062,7 @@ export function SiteAndFacadeModal({
               </div>
 
               <div>
-                <label style={{ fontSize: 11, color: "#93c5fd", fontWeight: 700, display: "block", marginBottom: 4 }}>
+                <label className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-[#8b949e] block mb-1 font-['Manrope']">
                   Parking / Driveway Zone
                 </label>
                 <select
@@ -1160,15 +1070,7 @@ export function SiteAndFacadeModal({
                   onChange={(e) =>
                     setSiteContext((prev) => ({ ...(prev || {}), parkingSide: e.target.value }))
                   }
-                  style={{
-                    width: "100%",
-                    padding: "7px 10px",
-                    borderRadius: 8,
-                    border: "1px solid rgba(71, 157, 233, 0.4)",
-                    background: "rgba(6, 15, 30, 0.9)",
-                    color: "#f8fafc",
-                    fontSize: 12,
-                  }}
+                  className="w-full px-3 py-2 rounded-xl border border-[#262f38] focus:border-[#2270b8] bg-[#141a21] text-[#f0f6fc] text-[12px] outline-none"
                 >
                   <option value="right">Right Wing Parking (P1-P3)</option>
                   <option value="left">Left Wing Parking (P1-P3)</option>
@@ -1177,8 +1079,8 @@ export function SiteAndFacadeModal({
                 </select>
               </div>
 
-              <div style={{ display: "flex", alignItems: "center", paddingTop: 18 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>
+              <div className="flex items-center pt-5">
+                <label className="flex items-center gap-2 text-[12px] text-[#f0f6fc] font-semibold font-['Manrope'] cursor-pointer">
                   <input
                     type="checkbox"
                     checked={siteContext?.showMainGate !== false}
@@ -1188,50 +1090,33 @@ export function SiteAndFacadeModal({
                         showMainGate: e.target.checked,
                       }))
                     }
+                    className="accent-[#2270b8] h-4 w-4 rounded"
                   />
-                  Show 3D Main Entrance Gate Archway
+                  <span>Show 3D Main Entrance Gate Archway</span>
                 </label>
               </div>
             </div>
 
             {/* Landmarks Manager */}
-            <div
-              style={{
-                background: "rgba(15, 23, 42, 0.55)",
-                border: "1px solid rgba(148, 163, 184, 0.22)",
-                borderRadius: 10,
-                padding: 12,
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
-              }}
-            >
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#93c5fd" }}>
-                📍 Familiar Property Landmarks (Guardhouse, Water Tank, Store, Laundry)
+            <div className="rounded-2xl bg-[#0b0f13] border border-[#262f38] p-3.5 space-y-3">
+              <div className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#479de9] font-['Manrope']">
+                Familiar Property Landmarks (Guardhouse, Water Tank, Laundry)
               </div>
 
               {/* 1-Click Quick Landmark Presets */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              <div className="flex flex-wrap gap-1.5">
                 {[
                   { label: "Guardhouse", pos: "front-left" },
-                  { label: "Sari-Sari Store", pos: "front-right" },
+                  { label: "Refuse Enclosure", pos: "front-right" },
                   { label: "Water Tank", pos: "back-right" },
                   { label: "Laundry Area", pos: "back-left" },
                   { label: "Generator Room", pos: "left" },
                 ].map((preset) => (
                   <button
                     key={preset.label}
+                    type="button"
                     onClick={() => handleAddLandmark(preset.label, preset.pos)}
-                    style={{
-                      padding: "4px 9px",
-                      borderRadius: 999,
-                      border: "1px solid rgba(71, 157, 233, 0.4)",
-                      background: "rgba(34, 112, 184, 0.25)",
-                      color: "#e2e8f0",
-                      fontSize: 11,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
+                    className="press-scale px-2.5 py-1 rounded-full border border-[#2270b8]/40 bg-[#2270b8]/15 hover:bg-[#2270b8]/25 text-[#f0f6fc] text-[11px] font-semibold font-['Manrope'] cursor-pointer"
                   >
                     + {preset.label}
                   </button>
@@ -1239,33 +1124,18 @@ export function SiteAndFacadeModal({
               </div>
 
               {/* Custom Landmark Input */}
-              <div style={{ display: "flex", gap: 8 }}>
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
                   value={newLandmarkLabel}
-                  placeholder="Custom landmark name (e.g. Gate 2, Pump Room)..."
+                  placeholder="Custom landmark name (e.g. Gate 2, Bike Rack)..."
                   onChange={(e) => setNewLandmarkLabel(e.target.value)}
-                  style={{
-                    flex: 1,
-                    padding: "7px 10px",
-                    borderRadius: 8,
-                    border: "1px solid rgba(148,163,184,0.3)",
-                    background: "rgba(6, 15, 30, 0.8)",
-                    color: "#f8fafc",
-                    fontSize: 12,
-                  }}
+                  className="flex-1 px-3 py-2 rounded-xl border border-[#262f38] focus:border-[#2270b8] bg-[#141a21] text-[#f0f6fc] text-[12px] outline-none"
                 />
                 <select
                   value={newLandmarkPos}
                   onChange={(e) => setNewLandmarkPos(e.target.value)}
-                  style={{
-                    padding: "7px 10px",
-                    borderRadius: 8,
-                    border: "1px solid rgba(148,163,184,0.3)",
-                    background: "rgba(6, 15, 30, 0.9)",
-                    color: "#f8fafc",
-                    fontSize: 12,
-                  }}
+                  className="px-3 py-2 rounded-xl border border-[#262f38] bg-[#141a21] text-[#f0f6fc] text-[12px] outline-none"
                 >
                   <option value="front-left">Front-Left Corner</option>
                   <option value="front-right">Front-Right Corner</option>
@@ -1275,17 +1145,9 @@ export function SiteAndFacadeModal({
                   <option value="back-right">Back-Right Corner</option>
                 </select>
                 <button
+                  type="button"
                   onClick={() => handleAddLandmark()}
-                  style={{
-                    padding: "7px 14px",
-                    borderRadius: 8,
-                    border: "1px solid #479de9",
-                    background: "linear-gradient(135deg, #2270b8, #0b3860)",
-                    color: "#fff",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
+                  className="press-scale px-4 py-2 rounded-xl bg-[#2270b8] hover:bg-[#3186d6] text-white text-[12px] font-bold font-['Manrope'] cursor-pointer"
                 >
                   Add
                 </button>
@@ -1293,33 +1155,21 @@ export function SiteAndFacadeModal({
 
               {/* Existing Landmarks List */}
               {(siteContext?.landmarks || []).length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+                <div className="flex flex-wrap gap-1.5 pt-1">
                   {(siteContext?.landmarks || []).map((lm) => (
                     <div
                       key={lm.id}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                        padding: "4px 10px",
-                        borderRadius: 8,
-                        background: "rgba(11, 56, 96, 0.65)",
-                        border: "1px solid rgba(71, 157, 233, 0.45)",
-                        fontSize: 11,
-                      }}
+                      className="inline-flex items-center gap-2 px-2.5 py-1 rounded-xl bg-[#141a21] border border-[#262f38] text-[11px] text-[#f0f6fc]"
                     >
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#479de9]" />
                       <span>
-                        📍 <strong>{lm.label}</strong> ({lm.position})
+                        <strong>{lm.label}</strong>{" "}
+                        <span className="text-[#8b949e]">({lm.position})</span>
                       </span>
                       <button
+                        type="button"
                         onClick={() => handleRemoveLandmark(lm.id)}
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          color: "#fca5a5",
-                          cursor: "pointer",
-                          fontWeight: 700,
-                        }}
+                        className="text-rose-400 hover:text-rose-300 font-bold cursor-pointer ml-0.5"
                       >
                         ✕
                       </button>
@@ -1332,47 +1182,22 @@ export function SiteAndFacadeModal({
         )}
 
         {/* Footer Save Button */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: 10,
-            marginTop: 16,
-            paddingTop: 12,
-            borderTop: "1px solid rgba(148, 163, 184, 0.18)",
-          }}
-        >
+        <div className="flex justify-end gap-2.5 mt-5 pt-4 border-t border-[#262f38]">
           <button
+            type="button"
             onClick={onClose}
-            style={{
-              padding: "8px 14px",
-              borderRadius: 9,
-              border: "1px solid rgba(148, 163, 184, 0.3)",
-              background: "rgba(15, 23, 42, 0.6)",
-              color: "#cbd5e1",
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
+            className="press-scale px-4 py-2 rounded-xl border border-[#262f38] bg-white/[0.04] hover:bg-white/[0.08] text-[#8b949e] hover:text-white text-[12px] font-semibold font-['Manrope'] cursor-pointer"
           >
             Close
           </button>
           {onPersistSiteAndFacade && (
             <button
+              type="button"
               onClick={onPersistSiteAndFacade}
               disabled={isSaving}
-              style={{
-                padding: "8px 16px",
-                borderRadius: 9,
-                border: "1px solid #479de9",
-                background: "linear-gradient(135deg, #2270b8, #0b3860)",
-                color: "#fff",
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: isSaving ? "wait" : "pointer",
-              }}
+              className="press-scale px-5 py-2 rounded-xl bg-[#2270b8] hover:bg-[#3186d6] text-white text-[12px] font-bold font-['Manrope'] shadow-lg cursor-pointer disabled:opacity-50"
             >
-              {isSaving ? "Saving to Property..." : "Save Photos & Street Context"}
+              {isSaving ? "Saving..." : "Save Photos & Street Context"}
             </button>
           )}
         </div>
@@ -1380,3 +1205,310 @@ export function SiteAndFacadeModal({
     </div>
   );
 }
+
+const NOOP_RAYCAST = () => null;
+
+/**
+ * 5. BATCHED FLOOR ARCHITECTURE 3D (BIM-Lite v3.0)
+ * Renders an entire floor's deduplicated walls (with punched window & door openings),
+ * continuous floor slab (with subtracted stairwell voids), staircases, railings,
+ * columns, doors, and windows in just ~7 batched WebGL draw calls.
+ */
+export function BatchedFloorArchitecture3D({
+  topology,
+  floorNumber = 1,
+  floorHeight = 2.6,
+  isCutaway = false,
+  isGhosted = false,
+  isLowPower = false,
+  architecture = {},
+}) {
+  const wallMatType = architecture?.wall_material || "stucco";
+  const extWallColor = architecture?.exterior_color || "#e5dacb";
+  const pbrWall = useMemo(() => getWallTextures(wallMatType), [wallMatType]);
+  const pbrAccentBrick = useMemo(() => getWallTextures("brick"), []);
+
+  const compiled = useMemo(
+    () => compileFloorGeometries(topology, floorHeight, isCutaway, architecture),
+    [topology, floorHeight, isCutaway, architecture]
+  );
+
+  // Dispose merged geometries on unmount or recompile to prevent GPU memory leaks
+  useEffect(() => {
+    return () => {
+      if (!compiled) return;
+      Object.values(compiled).forEach((geo) => {
+        if (geo && typeof geo.dispose === "function") geo.dispose();
+      });
+    };
+  }, [compiled]);
+
+  const baseY = (floorNumber - 1) * floorHeight;
+  const opacity = isGhosted ? 0.14 : 1;
+
+  return (
+    <group position={[0, baseY, 0]}>
+      {/* 1. Continuous Structural Floor Slab (with Stairwell Voids subtracted) */}
+      {compiled.slabGeo && (
+        <mesh
+          geometry={compiled.slabGeo}
+          castShadow={!isLowPower && !isGhosted}
+          receiveShadow={!isLowPower}
+          raycast={NOOP_RAYCAST}
+        >
+          <meshStandardMaterial
+            color="#334155"
+            roughness={0.82}
+            metalness={0.08}
+            transparent={isGhosted}
+            opacity={opacity}
+          />
+          {!isLowPower && !isGhosted && (
+            <Edges threshold={25} color="#1e293b" />
+          )}
+        </mesh>
+      )}
+
+      {/* 2. Batched Exterior Envelope Walls (with punched Window & Entry Door holes) */}
+      {compiled.exteriorWallGeo && (
+        <mesh
+          geometry={compiled.exteriorWallGeo}
+          castShadow={!isLowPower && !isGhosted}
+          receiveShadow={!isLowPower}
+          raycast={NOOP_RAYCAST}
+        >
+          <meshStandardMaterial
+            color={extWallColor}
+            map={pbrWall.map}
+            bumpMap={pbrWall.bumpMap}
+            bumpScale={0.016}
+            roughness={0.65}
+            metalness={0.05}
+            transparent={isGhosted}
+            opacity={opacity}
+          />
+          {!isLowPower && !isGhosted && (
+            <Edges threshold={22} color="#334155" />
+          )}
+        </mesh>
+      )}
+
+      {/* 2B. Batched Dark Brick / Charcoal Accent Facade Piers & Plinth Walls */}
+      {compiled.accentWallGeo && (
+        <mesh
+          geometry={compiled.accentWallGeo}
+          castShadow={!isLowPower && !isGhosted}
+          receiveShadow={!isLowPower}
+          raycast={NOOP_RAYCAST}
+        >
+          <meshStandardMaterial
+            color="#4b5059"
+            map={pbrAccentBrick.map}
+            bumpMap={pbrAccentBrick.bumpMap}
+            bumpScale={0.024}
+            roughness={0.78}
+            metalness={0.08}
+            transparent={isGhosted}
+            opacity={opacity}
+          />
+          {!isLowPower && !isGhosted && (
+            <Edges threshold={22} color="#1e293b" />
+          )}
+        </mesh>
+      )}
+
+      {/* 3. Batched Shared Interior Partition Walls (Deduplicated, with Hallway Door cutouts) */}
+      {compiled.interiorWallGeo && (
+        <mesh
+          geometry={compiled.interiorWallGeo}
+          castShadow={!isLowPower && !isGhosted}
+          receiveShadow={!isLowPower}
+          raycast={NOOP_RAYCAST}
+        >
+          <meshStandardMaterial
+            color="#f1f5f9"
+            map={pbrWall.map}
+            bumpMap={pbrWall.bumpMap}
+            bumpScale={0.01}
+            roughness={0.72}
+            transparent={isGhosted}
+            opacity={opacity}
+          />
+          {!isLowPower && !isGhosted && (
+            <Edges threshold={22} color="#64748b" />
+          )}
+        </mesh>
+      )}
+
+      {/* 4. Batched Architectural Concrete Trim (Columns, Stair Treads, Sills, Canopies, Balconies) */}
+      {compiled.concreteTrimGeo && (
+        <mesh
+          geometry={compiled.concreteTrimGeo}
+          castShadow={!isLowPower && !isGhosted}
+          receiveShadow={!isLowPower}
+          raycast={NOOP_RAYCAST}
+        >
+          <meshStandardMaterial
+            color="#cbd5e1"
+            roughness={0.68}
+            metalness={0.1}
+            transparent={isGhosted}
+            opacity={opacity}
+          />
+          {!isLowPower && !isGhosted && (
+            <Edges threshold={25} color="#475569" />
+          )}
+        </mesh>
+      )}
+
+      {/* 5. Batched Dark Architectural Metal (Door/Window Frames, Mullions, Balusters, Handrails) */}
+      {compiled.darkMetalGeo && (
+        <mesh
+          geometry={compiled.darkMetalGeo}
+          castShadow={!isLowPower && !isGhosted}
+          raycast={NOOP_RAYCAST}
+        >
+          <meshStandardMaterial
+            color="#1e293b"
+            roughness={0.35}
+            metalness={0.72}
+            transparent={isGhosted}
+            opacity={opacity}
+          />
+        </mesh>
+      )}
+
+      {/* 6. Batched Wooden Door Leaves (Slightly ajar in Cutaway mode) */}
+      {compiled.woodDoorGeo && (
+        <mesh
+          geometry={compiled.woodDoorGeo}
+          castShadow={!isLowPower && !isGhosted}
+          raycast={NOOP_RAYCAST}
+        >
+          <meshStandardMaterial
+            color="#6d4c3d"
+            roughness={0.55}
+            metalness={0.08}
+            transparent={isGhosted}
+            opacity={opacity}
+          />
+        </mesh>
+      )}
+
+      {/* 7. Batched Reflective Window Glass Panes */}
+      {compiled.glassGeo && !isCutaway && (
+        <mesh geometry={compiled.glassGeo} raycast={NOOP_RAYCAST}>
+          <meshStandardMaterial
+            color="#38bdf8"
+            roughness={0.12}
+            metalness={0.85}
+            transparent
+            opacity={isGhosted ? 0.06 : 0.48}
+          />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
+/**
+ * 6. BUILDING ROOFS 3D (BIM-Lite v3.0)
+ * Renders unified building-level Gable, Hip, Shed, or Flat Parapet roofs.
+ */
+export function BuildingRoofs3D({
+  building,
+  allSpaces = [],
+  maxFloor = 1,
+  floorHeight = 2.6,
+  isGhosted = false,
+  isLowPower = false,
+}) {
+  const pbrRoof = useMemo(() => getRoofTextures("ribbed"), []);
+  const extWallColor = building?.architecture?.exterior_color || "#e5dacb";
+
+  const roofZones = useMemo(
+    () => compileBuildingRoofs(building, allSpaces, maxFloor, floorHeight),
+    [building, allSpaces, maxFloor, floorHeight]
+  );
+
+  useEffect(() => {
+    return () => {
+      roofZones.forEach((zone) => {
+        zone.roofDeckGeo?.dispose?.();
+        zone.parapetWallGeo?.dispose?.();
+        zone.trimGeo?.dispose?.();
+      });
+    };
+  }, [roofZones]);
+
+  const opacity = isGhosted ? 0.14 : 1;
+
+  return (
+    <group>
+      {roofZones.map((zone) => (
+        <group key={zone.id}>
+          {zone.roofDeckGeo && (
+            <mesh
+              geometry={zone.roofDeckGeo}
+              castShadow={!isLowPower && !isGhosted}
+              receiveShadow={!isLowPower}
+              raycast={NOOP_RAYCAST}
+            >
+              <meshStandardMaterial
+                color={zone.color || "#334155"}
+                map={pbrRoof.map}
+                bumpMap={pbrRoof.bumpMap}
+                bumpScale={0.025}
+                roughness={0.55}
+                metalness={0.22}
+                side={THREE.DoubleSide}
+                transparent={isGhosted}
+                opacity={opacity}
+              />
+              {!isLowPower && !isGhosted && (
+                <Edges threshold={22} color="#1e293b" />
+              )}
+            </mesh>
+          )}
+
+          {zone.parapetWallGeo && (
+            <mesh
+              geometry={zone.parapetWallGeo}
+              castShadow={!isLowPower && !isGhosted}
+              receiveShadow={!isLowPower}
+              raycast={NOOP_RAYCAST}
+            >
+              <meshStandardMaterial
+                color={extWallColor}
+                roughness={0.68}
+                side={THREE.DoubleSide}
+                transparent={isGhosted}
+                opacity={opacity}
+              />
+              {!isLowPower && !isGhosted && (
+                <Edges threshold={22} color="#334155" />
+              )}
+            </mesh>
+          )}
+
+          {zone.trimGeo && (
+            <mesh
+              geometry={zone.trimGeo}
+              castShadow={!isLowPower && !isGhosted}
+              raycast={NOOP_RAYCAST}
+            >
+              <meshStandardMaterial
+                color="#1e293b"
+                roughness={0.45}
+                metalness={0.35}
+                transparent={isGhosted}
+                opacity={opacity}
+              />
+            </mesh>
+          )}
+        </group>
+      ))}
+    </group>
+  );
+}
+

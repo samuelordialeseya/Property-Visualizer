@@ -19,11 +19,20 @@
   --shadow-card-sm:  0 1px 2px 0 rgba(0,0,0,0.07), 0 3px 8px -2px rgba(0,0,0,0.09);
   --shadow-card:     0 1px 3px 0 rgba(0,0,0,0.08), 0 6px 20px -3px rgba(0,0,0,0.10);
   --shadow-card-hover: 0 2px 6px 0 rgba(0,0,0,0.10), 0 12px 30px -5px rgba(0,0,0,0.14);
-  --shadow-modal:    0 4px 12px 0 rgba(0,0,0,0.10), 0 24px_60px -10px rgba(0,0,0,0.20);
+  --shadow-modal:    0 4px 12px 0 rgba(0,0,0,0.10), 0 24px 60px -10px rgba(0,0,0,0.20);
+
+  /* Emil Kowalski custom motion curves */
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 @layer base {
   * { box-sizing: border-box; }
+  ::selection {
+    background-color: rgba(34, 112, 184, 0.28);
+    color: inherit;
+  }
   html {
     -webkit-text-size-adjust: 100%;
   }
@@ -72,12 +81,29 @@
   }
 
   /* Animation utility classes — hardware accelerated 60fps on mobile */
-  .animate-fade-in        { animation: fade-in        140ms ease-out both; will-change: opacity; transform: translateZ(0); }
-  .animate-fade-up        { animation: fade-up        140ms ease-out both; will-change: transform, opacity; transform: translateZ(0); }
-  .animate-fade-down      { animation: fade-down      140ms ease-out both; will-change: transform, opacity; transform: translateZ(0); }
-  .animate-slide-in-right { animation: slide-in-right 180ms cubic-bezier(0.2, 0, 0.2, 1) both; will-change: transform, opacity; transform: translateZ(0); }
-  .animate-scale-in       { animation: scale-in       140ms ease-out both; will-change: transform, opacity; transform: translateZ(0); }
-  .animate-slide-up-panel { animation: slide-up-panel 200ms cubic-bezier(0.2, 0, 0.2, 1) both; will-change: transform, opacity; transform: translateZ(0); }
+  .animate-fade-in        { animation: fade-in        140ms var(--ease-out-strong) both; will-change: opacity; transform: translateZ(0); }
+  .animate-fade-up        { animation: fade-up        150ms var(--ease-out-strong) both; will-change: transform, opacity; transform: translateZ(0); }
+  .animate-fade-down      { animation: fade-down      150ms var(--ease-out-strong) both; will-change: transform, opacity; transform: translateZ(0); }
+  .animate-slide-in-right { animation: slide-in-right 190ms var(--ease-drawer) both; will-change: transform, opacity; transform: translateZ(0); }
+  .animate-scale-in       { animation: scale-in       160ms var(--ease-out-strong) both; will-change: transform, opacity; transform: translateZ(0); }
+  .animate-slide-up-panel { animation: slide-up-panel 200ms var(--ease-drawer) both; will-change: transform, opacity; transform: translateZ(0); }
+
+  /* Obsidian Darkroom HUD surface & Emil Kowalski tactile button press */
+  .hud-surface {
+    background-color: #141a21;
+    border: 1px solid #262f38;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28), 0 18px 40px -8px rgba(0, 0, 0, 0.55);
+  }
+  .press-scale {
+    transition: transform 150ms cubic-bezier(0.23, 1, 0.32, 1),
+                background-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+                border-color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+                color 150ms cubic-bezier(0.23, 1, 0.32, 1),
+                opacity 150ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .press-scale:active:not(:disabled) {
+    transform: scale(0.97);
+  }
 
   /* Touch device optimizations: disable sticky hover transforms that stutter on tap */
   @media (hover: none), (pointer: coarse) {

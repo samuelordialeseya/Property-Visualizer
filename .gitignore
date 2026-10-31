@@ -46,6 +46,8 @@ next-env.d.ts
 *.mp4
 *.webm
 *.mp3
+*.wav
+/*.png
 audio_generated*/
 audio_out/
 test_audio*/
